@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
-import 'screens/auth/login.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+// import 'screens/auth/login.dart';
+import 'screens/auth/auth_gate.dart';
 
-void main() {
+void main() async {                             
+  WidgetsFlutterBinding.ensureInitialized();   
+  await Firebase.initializeApp(                  
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const SmartMediApp());
 }
 
@@ -21,7 +28,8 @@ class SmartMediApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const LoginPage(),
+      // home: const LoginPage(), 
+      home: const AuthGate(),                    // ✅ changed to AuthGate
     );
   }
 }

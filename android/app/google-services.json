@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "828923117741",
+    "project_id": "fyp-project-a0319",
+    "storage_bucket": "fyp-project-a0319.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:828923117741:android:835d63dbfa92ece3c94624",
+        "android_client_info": {
+          "package_name": "com.example.smartmedi_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAX0MNKBTMChg5B-kZ1PlTMctb0JdcaXi4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

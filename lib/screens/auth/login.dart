@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../widgets/common/blob_painter.dart';
 import '../../widgets/common/gradient_button.dart';
 import '../../widgets/common/app_input_field.dart';
 import '../../widgets/common/app_logo.dart';
 import 'register.dart';
 import 'forgot_password.dart';
+// import '../patient/home_page.dart'; // TODO: uncomment when home page is ready
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -15,11 +18,11 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
-  final _emailCtrl = TextEditingController();
+  final _loginCtrl = TextEditingController(); // email OR username
   final _passCtrl = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
-  String? _emailError;
+  String? _loginError;
   String? _passError;
 
   late AnimationController _blobCtrl;
@@ -55,59 +58,189 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   void dispose() {
     _blobCtrl.dispose();
     _fadeCtrl.dispose();
-    _emailCtrl.dispose();
+    _loginCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
 
+  // ─── Detect if input is email or username ────────────────────────────────────
+  bool _isEmail(String input) => RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(input);
+
+  // ─── Validation ──────────────────────────────────────────────────────────────
   void _validate() {
     setState(() {
-      _emailError = _emailCtrl.text.trim().isEmpty
-          ? 'Email is required'
-          : (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(_emailCtrl.text.trim())
-                ? 'Enter a valid email'
-                : null);
+      final input = _loginCtrl.text.trim();
+      if (input.isEmpty) {
+        _loginError = 'Email or username is required';
+      } else if (input.contains('@') && !_isEmail(input)) {
+        _loginError = 'Enter a valid email address';
+      } else if (!input.contains('@') && input.length < 3) {
+        _loginError = 'Username must be at least 3 characters';
+      } else {
+        _loginError = null;
+      }
+
       _passError = _passCtrl.text.isEmpty
           ? 'Password is required'
           : (_passCtrl.text.length < 6 ? 'At least 6 characters' : null);
     });
-    if (_emailError == null && _passError == null) _submit();
+    if (_loginError == null && _passError == null) _submit();
   }
 
+  // ─── Resolve username → email from Firestore ─────────────────────────────────
+  Future<String?> _resolveEmail(String input) async {
+    // If it's already an email, return as-is
+    if (_isEmail(input)) return input;
+
+    // Look up by username field in Firestore
+    final query = await FirebaseFirestore.instance
+        .collection('users')
+        .where('username', isEqualTo: input.toLowerCase())
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) return null; // username not found
+    return query.docs.first.data()['email'] as String?;
+  }
+
+  // ─── Firebase login ──────────────────────────────────────────────────────────
   Future<void> _submit() async {
     setState(() => _loading = true);
     try {
-      // TODO: Firebase Auth
-      // final credential = await FirebaseAuth.instance
-      //     .signInWithEmailAndPassword(
-      //   email: _emailCtrl.text.trim(),
-      //   password: _passCtrl.text,
-      // );
-      // final doc = await FirebaseFirestore.instance
-      //     .collection('users')
-      //     .doc(credential.user!.uid)
-      //     .get();
-      // final role = doc['role'];
-      // if (mounted) {
-      //   Navigator.pushReplacement(context, MaterialPageRoute(
-      //     builder: (_) => role == 'doctor'
-      //         ? const DoctorDashboardPage()
-      //         : const PatientHomePage(),
-      //   ));
-      // }
-      await Future.delayed(const Duration(seconds: 2));
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: const Color(0xFFFF6B8A),
-          ),
-        );
+      final input = _loginCtrl.text.trim();
+
+      // Step 1: Resolve to email (username lookup if needed)
+      final email = await _resolveEmail(input);
+
+      if (email == null) {
+        _showError('No account found with that username.');
+        return;
       }
+
+      // Step 2: Sign in with Firebase Auth
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: email,
+        password: _passCtrl.text,
+      );
+
+      // Step 3: Fetch user role from Firestore
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(credential.user!.uid)
+          .get();
+
+      if (!doc.exists) {
+        await FirebaseAuth.instance.signOut();
+        _showError('Account not found. Please register first.');
+        return;
+      }
+
+      final role = doc.data()?['role'] ?? '';
+
+      // Step 4: Block doctors from logging in via the patient app
+      if (role == 'doctor') {
+        await FirebaseAuth.instance.signOut();
+        _showError(
+          'Doctor accounts must use the SmartMedi Web Portal to log in.',
+        );
+        return;
+      }
+
+      // Step 5: Navigate to patient home
+      if (mounted) {
+        // TODO: Replace with your actual home page navigation
+        // Navigator.pushReplacement(
+        //   context,
+        //   MaterialPageRoute(builder: (_) => const PatientHomePage()),
+        // );
+        _showSuccess('Welcome back, ${doc.data()?['name'] ?? ''}!');
+      }
+    } on FirebaseAuthException catch (e) {
+      _showError(_friendlyError(e.code));
+    } catch (e) {
+      _showError('Something went wrong. Please try again.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  // ─── Friendly Firebase error messages ───────────────────────────────────────
+  String _friendlyError(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'No account found with this email.';
+      case 'wrong-password':
+        return 'Incorrect password. Please try again.';
+      case 'invalid-credential':
+        return 'Incorrect email/username or password.';
+      case 'user-disabled':
+        return 'This account has been disabled.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please try again later.';
+      case 'network-request-failed':
+        return 'No internet connection. Check your network.';
+      case 'invalid-email':
+        return 'The email address is not valid.';
+      default:
+        return 'Login failed. Please try again.';
+    }
+  }
+
+  // ─── Snackbar helpers ────────────────────────────────────────────────────────
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFFF6B8A),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF00D4AA),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   @override
@@ -207,7 +340,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 4),
           Text(
-            'Sign in to your account',
+            'Sign in with your email or username',
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.45),
               fontSize: 13.5,
@@ -215,18 +348,18 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 28),
 
-          // Email
+          // Email or username field
           AppInputField(
-            controller: _emailCtrl,
-            label: 'Email address',
-            icon: Icons.mail_outline_rounded,
+            controller: _loginCtrl,
+            label: 'Email or username',
+            icon: Icons.person_outline_rounded,
             keyboardType: TextInputType.emailAddress,
-            errorText: _emailError,
-            onChanged: (_) => setState(() => _emailError = null),
+            errorText: _loginError,
+            onChanged: (_) => setState(() => _loginError = null),
           ),
           const SizedBox(height: 16),
 
-          // Password
+          // Password field
           AppInputField(
             controller: _passCtrl,
             label: 'Password',
@@ -315,7 +448,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       height: 52,
       child: OutlinedButton.icon(
         onPressed: () {
-          // TODO: Google Sign-In
+          // TODO: Google Sign-In (patient only)
         },
         icon: Container(
           width: 22,

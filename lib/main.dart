@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-// import 'screens/auth/login.dart';
+import 'screens/auth/login.dart';
 import 'screens/auth/auth_gate.dart';
 
 void main() async {                             
@@ -28,8 +28,8 @@ class SmartMediApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      // home: const LoginPage(), 
-      home: const AuthGate(),                    // ✅ changed to AuthGate
+      home: const LoginPage(),
+      // home: const AuthGate(),                
     );
   }
 }

@@ -1,13 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../widgets/common/blob_painter.dart';
 import '../../widgets/common/gradient_button.dart';
 import '../../widgets/common/app_input_field.dart';
 import '../../widgets/common/top_bar.dart';
 import 'login.dart';
-
-enum UserRole { patient, doctor }
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -19,6 +19,7 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage>
     with TickerProviderStateMixin {
   final _nameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
@@ -30,13 +31,16 @@ class _RegisterPageState extends State<RegisterPage>
   bool _agreeToTerms = false;
 
   String? _nameError;
+  String? _usernameError;
   String? _emailError;
   String? _phoneError;
   String? _passError;
   String? _confirmPassError;
   String? _termsError;
 
-  UserRole _selectedRole = UserRole.patient;
+  // Role is always 'patient' in the mobile app.
+  // Doctors register via the web portal only.
+  static const String _role = 'patient';
 
   late AnimationController _blobCtrl;
   late AnimationController _fadeCtrl;
@@ -72,6 +76,7 @@ class _RegisterPageState extends State<RegisterPage>
     _blobCtrl.dispose();
     _fadeCtrl.dispose();
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _passCtrl.dispose();
@@ -79,11 +84,23 @@ class _RegisterPageState extends State<RegisterPage>
     super.dispose();
   }
 
+  // ─── Validation ─────────────────────────────────────────────────────────────
   void _validate() {
     setState(() {
       _nameError = _nameCtrl.text.trim().isEmpty
           ? 'Full name is required'
           : (_nameCtrl.text.trim().length < 2 ? 'Name too short' : null);
+
+      final username = _usernameCtrl.text.trim().toLowerCase();
+      if (username.isEmpty) {
+        _usernameError = 'Username is required';
+      } else if (username.length < 3) {
+        _usernameError = 'At least 3 characters';
+      } else if (!RegExp(r'^[a-z0-9._]+$').hasMatch(username)) {
+        _usernameError = 'Only letters, numbers, . and _';
+      } else {
+        _usernameError = null;
+      }
 
       _emailError = _emailCtrl.text.trim().isEmpty
           ? 'Email is required'
@@ -110,6 +127,7 @@ class _RegisterPageState extends State<RegisterPage>
     });
 
     if (_nameError == null &&
+        _usernameError == null &&
         _emailError == null &&
         _phoneError == null &&
         _passError == null &&
@@ -122,28 +140,90 @@ class _RegisterPageState extends State<RegisterPage>
   Future<void> _submit() async {
     setState(() => _loading = true);
     try {
-      // TODO: Firebase Auth
-      // final credential = await FirebaseAuth.instance
-      //     .createUserWithEmailAndPassword(
-      //   email: _emailCtrl.text.trim(),
-      //   password: _passCtrl.text,
-      // );
-      // await FirebaseFirestore.instance
-      //     .collection('users')
-      //     .doc(credential.user!.uid)
-      //     .set({
-      //   'name': _nameCtrl.text.trim(),
-      //   'email': _emailCtrl.text.trim(),
-      //   'phone': _phoneCtrl.text.trim(),
-      //   'role': _selectedRole.name,
-      //   'createdAt': FieldValue.serverTimestamp(),
-      // });
-      // await credential.user!.updateDisplayName(_nameCtrl.text.trim());
-      await Future.delayed(const Duration(seconds: 2));
+      final username = _usernameCtrl.text.trim().toLowerCase();
+
+      // Step 1: Check username is not already taken
+      final usernameQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('username', isEqualTo: username)
+          .limit(1)
+          .get();
+
+      if (usernameQuery.docs.isNotEmpty) {
+        setState(() => _usernameError = 'Username is already taken');
+        return;
+      }
+
+      // Step 2: Create Firebase Auth account
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+            email: _emailCtrl.text.trim(),
+            password: _passCtrl.text,
+          );
+
+      // Step 3: Save user profile to Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(credential.user!.uid)
+          .set({
+            'name': _nameCtrl.text.trim(),
+            'username': username,
+            'email': _emailCtrl.text.trim(),
+            'phone': _phoneCtrl.text.trim(),
+            'role': _role, // always 'patient'
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+
+      // Step 4: Update display name
+      await credential.user!.updateDisplayName(_nameCtrl.text.trim());
+
       if (mounted) {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const LoginPage()),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        String message;
+        switch (e.code) {
+          case 'email-already-in-use':
+            message = 'An account with this email already exists.';
+            break;
+          case 'weak-password':
+            message = 'Password is too weak. Use at least 6 characters.';
+            break;
+          case 'network-request-failed':
+            message = 'No internet connection. Check your network.';
+            break;
+          default:
+            message = 'Registration failed. Please try again.';
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFFF6B8A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
         );
       }
     } catch (e) {
@@ -225,6 +305,8 @@ class _RegisterPageState extends State<RegisterPage>
                           _buildDivider(),
                           const SizedBox(height: 20),
                           _buildGoogleButton(),
+                          const SizedBox(height: 24),
+                          _buildDoctorNote(),
                           const SizedBox(height: 32),
                           _buildLoginLink(),
                           const SizedBox(height: 28),
@@ -241,6 +323,7 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
+  // ─── Main form card ─────────────────────────────────────────────────────────
   Widget _buildCard() {
     return Container(
       padding: const EdgeInsets.all(28),
@@ -263,7 +346,8 @@ class _RegisterPageState extends State<RegisterPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildRoleSelector(),
+          // ── Patient badge ────────────────────────────────────────────────
+          _buildPatientBadge(),
           const SizedBox(height: 24),
 
           AppInputField(
@@ -275,6 +359,17 @@ class _RegisterPageState extends State<RegisterPage>
             hintText: 'e.g. Ahmad bin Ali',
             errorText: _nameError,
             onChanged: (_) => setState(() => _nameError = null),
+          ),
+          const SizedBox(height: 14),
+
+          AppInputField(
+            controller: _usernameCtrl,
+            label: 'Username',
+            icon: Icons.alternate_email_rounded,
+            keyboardType: TextInputType.text,
+            hintText: 'e.g. ahmad123',
+            errorText: _usernameError,
+            onChanged: (_) => setState(() => _usernameError = null),
           ),
           const SizedBox(height: 14),
 
@@ -363,89 +458,58 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildRoleSelector() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'I am a...',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.55),
-            fontSize: 13,
-            letterSpacing: 0.3,
-          ),
+  // ─── Patient badge (replaces the old role selector) ──────────────────────
+  Widget _buildPatientBadge() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF00D4AA).withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF00D4AA).withValues(alpha: 0.30),
+          width: 1.2,
         ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _roleChip(
-              label: 'Patient',
-              icon: Icons.personal_injury_outlined,
-              role: UserRole.patient,
-            ),
-            const SizedBox(width: 12),
-            _roleChip(
-              label: 'Doctor',
-              icon: Icons.medical_services_outlined,
-              role: UserRole.doctor,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _roleChip({
-    required String label,
-    required IconData icon,
-    required UserRole role,
-  }) {
-    final selected = _selectedRole == role;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedRole = role),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFF00D4AA).withValues(alpha: 0.15)
-                : Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFF00D4AA)
-                  : Colors.white.withValues(alpha: 0.10),
-              width: selected ? 1.6 : 1.0,
-            ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.personal_injury_outlined,
+            color: Color(0xFF00D4AA),
+            size: 20,
           ),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: selected
-                    ? const Color(0xFF00D4AA)
-                    : Colors.white.withValues(alpha: 0.40),
-                size: 22,
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Registering as a Patient',
+              style: TextStyle(
+                color: Color(0xFF00D4AA),
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
               ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected
-                      ? const Color(0xFF00D4AA)
-                      : Colors.white.withValues(alpha: 0.50),
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00D4AA).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'Patient App',
+              style: TextStyle(
+                color: Color(0xFF00D4AA),
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // ─── Terms & conditions ──────────────────────────────────────────────────
   Widget _buildTermsCheckbox() {
     return GestureDetector(
       onTap: () => setState(() {
@@ -494,7 +558,7 @@ class _RegisterPageState extends State<RegisterPage>
                     ),
                     recognizer: TapGestureRecognizer()
                       ..onTap = () {
-                        // TODO: Navigator.push to TermsPage
+                        // TODO: Navigate to TermsPage
                       },
                   ),
                   const TextSpan(text: ' and '),
@@ -506,7 +570,7 @@ class _RegisterPageState extends State<RegisterPage>
                     ),
                     recognizer: TapGestureRecognizer()
                       ..onTap = () {
-                        // TODO: Navigator.push to PrivacyPage
+                        // TODO: Navigate to PrivacyPage
                       },
                   ),
                 ],
@@ -518,6 +582,7 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
+  // ─── Or divider ──────────────────────────────────────────────────────────
   Widget _buildDivider() {
     return Row(
       children: [
@@ -548,13 +613,14 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
+  // ─── Google button ───────────────────────────────────────────────────────
   Widget _buildGoogleButton() {
     return SizedBox(
       width: double.infinity,
       height: 52,
       child: OutlinedButton.icon(
         onPressed: () {
-          // TODO: Google Sign-Up
+          // TODO: Google Sign-Up (patient only)
         },
         icon: Container(
           width: 22,
@@ -597,6 +663,58 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
+  // ─── Doctor note — redirects doctors to web portal ───────────────────────
+  Widget _buildDoctorNote() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF5B6EF5).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF5B6EF5).withValues(alpha: 0.20),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.medical_services_outlined,
+            color: Color(0xFF8B9CF5),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 12.5,
+                  height: 1.5,
+                ),
+                children: const [
+                  TextSpan(text: 'Are you a '),
+                  TextSpan(
+                    text: 'Doctor?',
+                    style: TextStyle(
+                      color: Color(0xFF8B9CF5),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text:
+                        ' Please register via the SmartMedi Web Portal instead.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Sign in link ────────────────────────────────────────────────────────
   Widget _buildLoginLink() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,

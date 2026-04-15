@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:smartmedi_app/screens/home.dart';
 import '../../widgets/common/blob_painter.dart';
 import '../../widgets/common/gradient_button.dart';
 import '../../widgets/common/app_input_field.dart';
 import '../../widgets/common/top_bar.dart';
+import '../../services/google_auth_service.dart';
 import 'login.dart';
-
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -28,6 +29,7 @@ class _RegisterPageState extends State<RegisterPage>
   bool _obscurePass = true;
   bool _obscureConfirm = true;
   bool _loading = false;
+  bool _googleLoading = false;
   bool _agreeToTerms = false;
 
   String? _nameError;
@@ -613,42 +615,88 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
+  // ─── Google sign-up ───────────────────────────────────────────────────────
+  Future<void> _googleSignUp() async {
+    setState(() => _googleLoading = true);
+    final result = await GoogleAuthService.signUp();
+    if (!mounted) return;
+    setState(() => _googleLoading = false);
+
+    switch (result.status) {
+      case GoogleAuthStatus.success:
+        // TODO: Navigate to PatientHomePage
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PatientHomePage()),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Welcome, ${result.name ?? ''}!',
+                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF00D4AA),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+        break;
+      case GoogleAuthStatus.cancelled:
+        break;
+      case GoogleAuthStatus.doctorBlocked:
+      case GoogleAuthStatus.error:
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    result.message ?? 'Something went wrong.',
+                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFFFF6B8A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+        break;
+    }
+  }
+
   // ─── Google button ───────────────────────────────────────────────────────
   Widget _buildGoogleButton() {
     return SizedBox(
       width: double.infinity,
       height: 52,
-      child: OutlinedButton.icon(
-        onPressed: () {
-          // TODO: Google Sign-Up (patient only)
-        },
-        icon: Container(
-          width: 22,
-          height: 22,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: const Center(
-            child: Text(
-              'G',
-              style: TextStyle(
-                color: Color(0xFF4285F4),
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ),
-        label: const Text(
-          'Continue with Google',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 14.5,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.2,
-          ),
-        ),
+      child: OutlinedButton(
+        onPressed: _googleLoading ? null : _googleSignUp,
         style: OutlinedButton.styleFrom(
           side: BorderSide(
             color: Colors.white.withValues(alpha: 0.15),
@@ -659,6 +707,48 @@ class _RegisterPageState extends State<RegisterPage>
           ),
           backgroundColor: Colors.white.withValues(alpha: 0.05),
         ),
+        child: _googleLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.2,
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'G',
+                        style: TextStyle(
+                          color: Color(0xFF4285F4),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Continue with Google',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }

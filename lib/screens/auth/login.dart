@@ -2,13 +2,18 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
+import 'package:smartmedi_app/screens/home.dart';
+import '../../providers/user_provider.dart';
+
 import '../../widgets/common/blob_painter.dart';
 import '../../widgets/common/gradient_button.dart';
 import '../../widgets/common/app_input_field.dart';
 import '../../widgets/common/app_logo.dart';
+import '../../services/google_auth_service.dart';
 import 'register.dart';
 import 'forgot_password.dart';
-// import '../patient/home_page.dart'; // TODO: uncomment when home page is ready
+
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -22,6 +27,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   final _passCtrl = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
+  bool _googleLoading = false;
   String? _loginError;
   String? _passError;
 
@@ -149,10 +155,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // Step 5: Navigate to patient home
       if (mounted) {
         // TODO: Replace with your actual home page navigation
-        // Navigator.pushReplacement(
-        //   context,
-        //   MaterialPageRoute(builder: (_) => const PatientHomePage()),
-        // );
+        await context.read<UserProvider>().loadUser();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PatientHomePage()),
+        );
         _showSuccess('Welcome back, ${doc.data()?['name'] ?? ''}!');
       }
     } on FirebaseAuthException catch (e) {
@@ -183,6 +190,34 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         return 'The email address is not valid.';
       default:
         return 'Login failed. Please try again.';
+    }
+  }
+
+  // ─── Google Sign-In ──────────────────────────────────────────────────────────
+  Future<void> _googleSignIn() async {
+    setState(() => _googleLoading = true);
+    final result = await GoogleAuthService.signIn();
+    if (!mounted) return;
+    setState(() => _googleLoading = false);
+
+    switch (result.status) {
+      case GoogleAuthStatus.success:
+        // TODO: Navigate to PatientHomePage
+        await context.read<UserProvider>().loadUser();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PatientHomePage()),
+        );
+        _showSuccess('Welcome, ${result.name ?? ''}!');
+        break;
+      case GoogleAuthStatus.cancelled:
+        break; // user dismissed — do nothing
+      case GoogleAuthStatus.doctorBlocked:
+        _showError(result.message!);
+        break;
+      case GoogleAuthStatus.error:
+        _showError(result.message!);
+        break;
     }
   }
 
@@ -446,37 +481,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     return SizedBox(
       width: double.infinity,
       height: 52,
-      child: OutlinedButton.icon(
-        onPressed: () {
-          // TODO: Google Sign-In (patient only)
-        },
-        icon: Container(
-          width: 22,
-          height: 22,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: const Center(
-            child: Text(
-              'G',
-              style: TextStyle(
-                color: Color(0xFF4285F4),
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-              ),
-            ),
-          ),
-        ),
-        label: const Text(
-          'Continue with Google',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 14.5,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 0.2,
-          ),
-        ),
+      child: OutlinedButton(
+        onPressed: _googleLoading ? null : _googleSignIn,
         style: OutlinedButton.styleFrom(
           side: BorderSide(
             color: Colors.white.withValues(alpha: 0.15),
@@ -487,6 +493,48 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           ),
           backgroundColor: Colors.white.withValues(alpha: 0.05),
         ),
+        child: _googleLoading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.2,
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'G',
+                        style: TextStyle(
+                          color: Color(0xFF4285F4),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Continue with Google',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }

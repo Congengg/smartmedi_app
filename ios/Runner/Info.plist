@@ -29,6 +29,10 @@
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>
+	<key>NSCameraUsageDescription</key>
+	<string>SmartMedi needs camera access to update your profile photo.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SmartMedi needs photo library access to update your profile photo.</string>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../widgets/common/blob_painter.dart';
 import '../../widgets/common/gradient_button.dart';
 import '../../widgets/common/app_input_field.dart';
@@ -77,6 +78,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     super.dispose();
   }
 
+  // ─── Validation ──────────────────────────────────────────────────────────────
   void _validate() {
     setState(() {
       _emailError = _emailCtrl.text.trim().isEmpty
@@ -88,14 +90,14 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
     if (_emailError == null) _sendReset();
   }
 
+  // ─── Send reset email via Firebase ───────────────────────────────────────────
   Future<void> _sendReset() async {
     setState(() => _loading = true);
     try {
-      // TODO: Firebase Auth
-      // await FirebaseAuth.instance.sendPasswordResetEmail(
-      //   email: _emailCtrl.text.trim(),
-      // );
-      await Future.delayed(const Duration(seconds: 2));
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: _emailCtrl.text.trim(),
+      );
+
       if (mounted) {
         setState(() {
           _loading = false;
@@ -103,17 +105,100 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
         });
         _successCtrl.forward();
       }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() => _loading = false);
+        _showError(_friendlyError(e.code));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _loading = false);
+        _showError('Something went wrong. Please try again.');
+      }
+    }
+  }
+
+  // ─── Resend reset email (called by ResendTimer widget) ────────────────────────
+  Future<void> _resendReset() async {
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(
+        email: _emailCtrl.text.trim(),
+      );
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: const Color(0xFFFF6B8A),
+            content: const Row(
+              children: [
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                SizedBox(width: 10),
+                Text(
+                  'Reset email resent!',
+                  style: TextStyle(color: Colors.white, fontSize: 13.5),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF00D4AA),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: const EdgeInsets.all(16),
           ),
         );
       }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) _showError(_friendlyError(e.code));
+    } catch (_) {
+      if (mounted) _showError('Could not resend. Please try again.');
     }
+  }
+
+  // ─── Map Firebase error codes → friendly messages ─────────────────────────────
+  String _friendlyError(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'No account found with this email address.';
+      case 'invalid-email':
+        return 'The email address is not valid.';
+      case 'too-many-requests':
+        return 'Too many attempts. Please wait a moment and try again.';
+      case 'network-request-failed':
+        return 'No internet connection. Check your network.';
+      default:
+        return 'Something went wrong. Please try again.';
+    }
+  }
+
+  // ─── Show error snackbar ─────────────────────────────────────────────────────
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFFF6B8A),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   @override
@@ -199,7 +284,6 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
           ),
         ),
         const SizedBox(height: 40),
-
         Container(
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
@@ -363,12 +447,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage>
               ),
             ),
             const SizedBox(height: 28),
-            ResendTimer(
-              onResend: () async {
-                // TODO: FirebaseAuth.instance.sendPasswordResetEmail(...)
-                await Future.delayed(const Duration(seconds: 1));
-              },
-            ),
+
+            // ✅ ResendTimer now wired to real Firebase call
+            ResendTimer(onResend: _resendReset),
+
             const SizedBox(height: 32),
             GradientButton(
               label: 'Back to Sign In',

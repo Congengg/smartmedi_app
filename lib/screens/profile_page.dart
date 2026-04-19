@@ -1,27 +1,47 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:smartmedi_app/screens/auth/login.dart';
 import '../../widgets/common/blob_painter.dart';
+import '../../providers/user_provider.dart';
 
 // ─── Blob preset ──────────────────────────────────────────────────────────────
 class _ProfileBlobs {
   static const blobs = [
     BlobConfig(
       color: Color(0x1600D4AA),
-      x: 0.85, y: 0.08, radius: 0.42,
-      dx: 0.05, dy: 0.04, speedX: 0.7, speedY: 0.8,
+      x: 0.85,
+      y: 0.08,
+      radius: 0.42,
+      dx: 0.05,
+      dy: 0.04,
+      speedX: 0.7,
+      speedY: 0.8,
     ),
     BlobConfig(
       color: Color(0x115B6EF5),
-      x: 0.10, y: 0.40, radius: 0.36,
-      dx: 0.05, dy: 0.05, speedX: 0.9, speedY: 1.0,
+      x: 0.10,
+      y: 0.40,
+      radius: 0.36,
+      dx: 0.05,
+      dy: 0.05,
+      speedX: 0.9,
+      speedY: 1.0,
     ),
     BlobConfig(
       color: Color(0x0BE040A0),
-      x: 0.55, y: 0.80, radius: 0.30,
-      dx: 0.04, dy: 0.04, speedX: 1.1, speedY: 0.7,
+      x: 0.55,
+      y: 0.80,
+      radius: 0.30,
+      dx: 0.04,
+      dy: 0.04,
+      speedX: 1.1,
+      speedY: 0.7,
     ),
   ];
 }
@@ -57,14 +77,7 @@ class _ProfilePageState extends State<ProfilePage>
     with SingleTickerProviderStateMixin {
   late AnimationController _blobCtrl;
 
-  // User data
-  String _name = '';
-  String _username = '';
-  String _email = '';
-  String _phone = '';
-  bool _loading = true;
-
-  // Settings toggles
+  bool _uploadingPhoto = false;
   bool _notificationsEnabled = true;
   bool _emailAlertsEnabled = false;
 
@@ -75,7 +88,6 @@ class _ProfilePageState extends State<ProfilePage>
       vsync: this,
       duration: const Duration(seconds: 10),
     )..repeat();
-    _loadUser();
   }
 
   @override
@@ -84,31 +96,158 @@ class _ProfilePageState extends State<ProfilePage>
     super.dispose();
   }
 
-  // ─── Load user from Firestore ────────────────────────────────────────────────
-  Future<void> _loadUser() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+  // ─── Pick & upload profile photo ──────────────────────────────────────────
+  Future<void> _pickAndUploadPhoto() async {
+    // Show source picker (camera or gallery)
+    final source = await _showImageSourceSheet();
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    setState(() => _uploadingPhoto = true);
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+
+      final file = File(picked.path);
+
+      // Upload to Firebase Storage: avatars/{uid}.jpg
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('avatars')
+          .child('$uid.jpg');
+
+      await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+
+      // Get the public download URL
+      final downloadUrl = await ref.getDownloadURL();
+
+      // Save URL to Firestore and Firebase Auth profile
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+        'photoUrl': downloadUrl,
+      });
+
+      await FirebaseAuth.instance.currentUser?.updatePhotoURL(downloadUrl);
+
+      // Update Provider so all screens see the new photo instantly
       if (mounted) {
-        final data = doc.data() ?? {};
-        setState(() {
-          _name = data['name'] ?? '';
-          _username = data['username'] ?? '';
-          _email = data['email'] ?? '';
-          _phone = data['phone'] ?? '';
-          _loading = false;
-        });
+        context.read<UserProvider>().photoUrl = downloadUrl;
+        context.read<UserProvider>().notifyListeners();
+        _showSuccess('Profile photo updated!');
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) _showError('Failed to upload photo. Please try again.');
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
     }
   }
 
-  // ─── Sign out ────────────────────────────────────────────────────────────────
+  // ─── Image source bottom sheet ────────────────────────────────────────────
+  Future<ImageSource?> _showImageSourceSheet() {
+    return showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF141828),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Profile photo',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Camera
+            _sourceOption(
+              icon: Icons.camera_alt_rounded,
+              label: 'Take a photo',
+              color: const Color(0xFF00D4AA),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            const SizedBox(height: 12),
+            // Gallery
+            _sourceOption(
+              icon: Icons.photo_library_rounded,
+              label: 'Choose from gallery',
+              color: const Color(0xFF378ADD),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            const SizedBox(height: 12),
+            // Cancel
+            _sourceOption(
+              icon: Icons.close_rounded,
+              label: 'Cancel',
+              color: Colors.white.withValues(alpha: 0.40),
+              onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sourceOption({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.20), width: 1),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 14),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Sign out ─────────────────────────────────────────────────────────────
   Future<void> _signOut() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -116,6 +255,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
     if (confirmed != true) return;
 
+    context.read<UserProvider>().clear();
     await FirebaseAuth.instance.signOut();
     if (mounted) {
       Navigator.pushAndRemoveUntil(
@@ -126,35 +266,125 @@ class _ProfilePageState extends State<ProfilePage>
     }
   }
 
-  // ─── Delete account dialog ───────────────────────────────────────────────────
-  void _showDeleteAccountDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => _buildDeleteDialog(ctx),
-    );
+  // ─── Delete account ───────────────────────────────────────────────────────
+  Future<void> _deleteAccount() async {
+    Navigator.pop(context); // close dialog
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid == null) return;
+
+      // Delete Firestore document
+      await FirebaseFirestore.instance.collection('users').doc(uid).delete();
+
+      // Delete profile photo from Storage (if exists)
+      try {
+        await FirebaseStorage.instance.ref().child('avatars/$uid.jpg').delete();
+      } catch (_) {}
+
+      // Delete Firebase Auth account
+      await FirebaseAuth.instance.currentUser?.delete();
+
+      if (mounted) {
+        context.read<UserProvider>().clear();
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+          (_) => false,
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        // Firebase requires the user to re-authenticate before deleting
+        if (mounted) {
+          _showError(
+            'For security, please sign out and sign back in before deleting your account.',
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) _showError('Failed to delete account. Please try again.');
+    }
   }
 
-  // ─── Edit profile bottom sheet ───────────────────────────────────────────────
+  // ─── Edit profile bottom sheet ────────────────────────────────────────────
   void _showEditProfile() {
+    final user = context.read<UserProvider>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _EditProfileSheet(
-        name: _name,
-        phone: _phone,
+        name: user.name,
+        phone: user.phone,
         onSaved: (name, phone) {
-          setState(() {
-            _name = name;
-            _phone = phone;
-          });
+          context.read<UserProvider>().updateProfile(
+            newName: name,
+            newPhone: phone,
+          );
         },
+      ),
+    );
+  }
+
+  // ─── Snackbars ────────────────────────────────────────────────────────────
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                msg,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFFFF6B8A),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  void _showSuccess(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                msg,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF00D4AA),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = context.watch<UserProvider>();
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E1A),
       body: AnimatedBuilder(
@@ -186,20 +416,26 @@ class _ProfilePageState extends State<ProfilePage>
                   physics: const BouncingScrollPhysics(),
                   slivers: [
                     SliverToBoxAdapter(child: _buildTopBar()),
-                    SliverToBoxAdapter(child: _buildProfileCard()),
+                    SliverToBoxAdapter(child: _buildProfileCard(user)),
                     SliverToBoxAdapter(child: _buildStatsRow()),
-                    SliverToBoxAdapter(child: _buildSection(
-                      title: 'Account',
-                      items: _accountItems,
-                    )),
-                    SliverToBoxAdapter(child: _buildSection(
-                      title: 'Preferences',
-                      items: _preferenceItems,
-                    )),
-                    SliverToBoxAdapter(child: _buildSection(
-                      title: 'Support',
-                      items: _supportItems,
-                    )),
+                    SliverToBoxAdapter(
+                      child: _buildSection(
+                        title: 'Account',
+                        items: _accountItems(user),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildSection(
+                        title: 'Preferences',
+                        items: _preferenceItems,
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _buildSection(
+                        title: 'Support',
+                        items: _supportItems,
+                      ),
+                    ),
                     SliverToBoxAdapter(child: _buildDangerZone()),
                     const SliverToBoxAdapter(child: SizedBox(height: 100)),
                   ],
@@ -213,7 +449,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Top bar ─────────────────────────────────────────────────────────────────
+  // ─── Top bar ──────────────────────────────────────────────────────────────
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -227,10 +463,7 @@ class _ProfilePageState extends State<ProfilePage>
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(11),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.10),
-                  width: 1,
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
               ),
               child: const Icon(
                 Icons.arrow_back_ios_new_rounded,
@@ -250,7 +483,6 @@ class _ProfilePageState extends State<ProfilePage>
             ),
           ),
           const Spacer(),
-          // Edit button
           GestureDetector(
             onTap: _showEditProfile,
             child: Container(
@@ -261,7 +493,6 @@ class _ProfilePageState extends State<ProfilePage>
                 borderRadius: BorderRadius.circular(11),
                 border: Border.all(
                   color: const Color(0xFF00D4AA).withValues(alpha: 0.25),
-                  width: 1,
                 ),
               ),
               child: const Icon(
@@ -276,8 +507,8 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Profile card ─────────────────────────────────────────────────────────────
-  Widget _buildProfileCard() {
+  // ─── Profile card with photo upload ───────────────────────────────────────
+  Widget _buildProfileCard(UserProvider user) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
       child: Container(
@@ -290,76 +521,98 @@ class _ProfilePageState extends State<ProfilePage>
             width: 1.2,
           ),
         ),
-        child: _loading
+        child: user.isLoading
             ? _buildProfileSkeleton()
             : Row(
                 children: [
-                  // Avatar
-                  Stack(
-                    children: [
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF00D4AA), Color(0xFF00A896)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF00D4AA)
-                                  .withValues(alpha: 0.35),
-                              blurRadius: 16,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            _name.isNotEmpty
-                                ? _name[0].toUpperCase()
-                                : 'P',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                      // Patient badge
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 22,
-                          height: 22,
+                  // ── Tappable avatar ────────────────────────────────────
+                  GestureDetector(
+                    onTap: _pickAndUploadPhoto,
+                    child: Stack(
+                      children: [
+                        // Avatar circle
+                        Container(
+                          width: 72,
+                          height: 72,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF00D4AA),
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF00D4AA), Color(0xFF00A896)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF0A0E1A),
-                              width: 2,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFF00D4AA,
+                                ).withValues(alpha: 0.35),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: _uploadingPhoto
+                              // Show spinner while uploading
+                              ? const Center(
+                                  child: SizedBox(
+                                    width: 26,
+                                    height: 26,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2.5,
+                                    ),
+                                  ),
+                                )
+                              : user.photoUrl.isNotEmpty
+                              // Show uploaded photo
+                              ? ClipOval(
+                                  child: Image.network(
+                                    user.photoUrl,
+                                    width: 72,
+                                    height: 72,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) =>
+                                        _avatarInitial(user.initials),
+                                  ),
+                                )
+                              // Show initial letter
+                              : _avatarInitial(user.initials),
+                        ),
+
+                        // Camera icon overlay (bottom right)
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00D4AA),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF0A0E1A),
+                                width: 2,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.white,
+                              size: 12,
                             ),
                           ),
-                          child: const Icon(
-                            Icons.check_rounded,
-                            color: Colors.white,
-                            size: 12,
-                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 18),
+
+                  // Name / username / patient pill
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _name,
+                          user.name,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -369,39 +622,43 @@ class _ProfilePageState extends State<ProfilePage>
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '@$_username',
+                          '@${user.username}',
                           style: TextStyle(
-                            color: const Color(0xFF00D4AA)
-                                .withValues(alpha: 0.80),
+                            color: const Color(
+                              0xFF00D4AA,
+                            ).withValues(alpha: 0.80),
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        // Patient pill
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF00D4AA)
-                                .withValues(alpha: 0.12),
+                            color: const Color(
+                              0xFF00D4AA,
+                            ).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: const Color(0xFF00D4AA)
-                                  .withValues(alpha: 0.28),
+                              color: const Color(
+                                0xFF00D4AA,
+                              ).withValues(alpha: 0.28),
                               width: 1,
                             ),
                           ),
-                          child: Row(
+                          child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
+                              Icon(
                                 Icons.personal_injury_outlined,
                                 color: Color(0xFF00D4AA),
                                 size: 12,
                               ),
-                              const SizedBox(width: 4),
-                              const Text(
+                              SizedBox(width: 4),
+                              Text(
                                 'Patient',
                                 style: TextStyle(
                                   color: Color(0xFF00D4AA),
@@ -417,6 +674,19 @@ class _ProfilePageState extends State<ProfilePage>
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _avatarInitial(String initial) {
+    return Center(
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 28,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -460,7 +730,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Stats row ────────────────────────────────────────────────────────────────
+  // ─── Stats row ────────────────────────────────────────────────────────────
   Widget _buildStatsRow() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
@@ -503,10 +773,7 @@ class _ProfilePageState extends State<ProfilePage>
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: color.withValues(alpha: 0.20),
-            width: 1,
-          ),
+          border: Border.all(color: color.withValues(alpha: 0.20), width: 1),
         ),
         child: Column(
           children: [
@@ -535,7 +802,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Settings section ─────────────────────────────────────────────────────────
+  // ─── Settings section ─────────────────────────────────────────────────────
   Widget _buildSection({
     required String title,
     required List<_SettingItem> items,
@@ -641,109 +908,95 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Account settings items ───────────────────────────────────────────────────
-  List<_SettingItem> get _accountItems => [
-        _SettingItem(
-          icon: Icons.person_outline_rounded,
-          label: 'Personal information',
-          subtitle: _loading ? '' : _email,
-          color: const Color(0xFF00D4AA),
-          onTap: _showEditProfile,
-        ),
-        _SettingItem(
-          icon: Icons.phone_outlined,
-          label: 'Phone number',
-          subtitle: _loading ? '' : (_phone.isEmpty ? 'Not set' : _phone),
-          color: const Color(0xFF378ADD),
-          onTap: _showEditProfile,
-        ),
-        _SettingItem(
-          icon: Icons.lock_outline_rounded,
-          label: 'Change password',
-          color: const Color(0xFF7F77DD),
-          onTap: () {
-            // TODO: Navigate to ChangePasswordPage
-          },
-        ),
-        _SettingItem(
-          icon: Icons.health_and_safety_outlined,
-          label: 'Medical history',
-          subtitle: 'Conditions, allergies, medications',
-          color: const Color(0xFFD85A30),
-          onTap: () {
-            // TODO: Navigate to MedicalHistoryPage
-          },
-        ),
-      ];
+  // ─── Settings items ───────────────────────────────────────────────────────
+  List<_SettingItem> _accountItems(UserProvider user) => [
+    _SettingItem(
+      icon: Icons.person_outline_rounded,
+      label: 'Personal information',
+      subtitle: user.email,
+      color: const Color(0xFF00D4AA),
+      onTap: _showEditProfile,
+    ),
+    _SettingItem(
+      icon: Icons.phone_outlined,
+      label: 'Phone number',
+      subtitle: user.phone.isEmpty ? 'Not set' : user.phone,
+      color: const Color(0xFF378ADD),
+      onTap: _showEditProfile,
+    ),
+    _SettingItem(
+      icon: Icons.lock_outline_rounded,
+      label: 'Change password',
+      color: const Color(0xFF7F77DD),
+      onTap: () {}, // TODO: ChangePasswordPage
+    ),
+    _SettingItem(
+      icon: Icons.health_and_safety_outlined,
+      label: 'Medical history',
+      subtitle: 'Conditions, allergies, medications',
+      color: const Color(0xFFD85A30),
+      onTap: () {}, // TODO: MedicalHistoryPage
+    ),
+  ];
 
-  // ─── Preference items ─────────────────────────────────────────────────────────
   List<_SettingItem> get _preferenceItems => [
-        _SettingItem(
-          icon: Icons.notifications_outlined,
-          label: 'Push notifications',
-          color: const Color(0xFF00D4AA),
-          onTap: () =>
-              setState(() => _notificationsEnabled = !_notificationsEnabled),
-          trailing: _buildToggle(_notificationsEnabled, (v) {
-            setState(() => _notificationsEnabled = v);
-          }),
-        ),
-        _SettingItem(
-          icon: Icons.mail_outline_rounded,
-          label: 'Email alerts',
-          color: const Color(0xFF378ADD),
-          onTap: () =>
-              setState(() => _emailAlertsEnabled = !_emailAlertsEnabled),
-          trailing: _buildToggle(_emailAlertsEnabled, (v) {
-            setState(() => _emailAlertsEnabled = v);
-          }),
-        ),
-        _SettingItem(
-          icon: Icons.language_rounded,
-          label: 'Language',
-          subtitle: 'English',
-          color: const Color(0xFF7F77DD),
-          onTap: () {
-            // TODO: Language picker
-          },
-        ),
-      ];
+    _SettingItem(
+      icon: Icons.notifications_outlined,
+      label: 'Push notifications',
+      color: const Color(0xFF00D4AA),
+      onTap: () =>
+          setState(() => _notificationsEnabled = !_notificationsEnabled),
+      trailing: _buildToggle(
+        _notificationsEnabled,
+        (v) => setState(() => _notificationsEnabled = v),
+      ),
+    ),
+    _SettingItem(
+      icon: Icons.mail_outline_rounded,
+      label: 'Email alerts',
+      color: const Color(0xFF378ADD),
+      onTap: () => setState(() => _emailAlertsEnabled = !_emailAlertsEnabled),
+      trailing: _buildToggle(
+        _emailAlertsEnabled,
+        (v) => setState(() => _emailAlertsEnabled = v),
+      ),
+    ),
+    _SettingItem(
+      icon: Icons.language_rounded,
+      label: 'Language',
+      subtitle: 'English',
+      color: const Color(0xFF7F77DD),
+      onTap: () {},
+    ),
+  ];
 
-  // ─── Support items ────────────────────────────────────────────────────────────
   List<_SettingItem> get _supportItems => [
-        _SettingItem(
-          icon: Icons.help_outline_rounded,
-          label: 'Help & FAQ',
-          color: const Color(0xFF00D4AA),
-          onTap: () {
-            // TODO: Navigate to HelpPage
-          },
-        ),
-        _SettingItem(
-          icon: Icons.privacy_tip_outlined,
-          label: 'Privacy policy',
-          color: const Color(0xFF378ADD),
-          onTap: () {
-            // TODO: Navigate to PrivacyPage
-          },
-        ),
-        _SettingItem(
-          icon: Icons.description_outlined,
-          label: 'Terms of service',
-          color: const Color(0xFF7F77DD),
-          onTap: () {
-            // TODO: Navigate to TermsPage
-          },
-        ),
-        _SettingItem(
-          icon: Icons.logout_rounded,
-          label: 'Sign out',
-          color: const Color(0xFFFF6B8A),
-          onTap: _signOut,
-        ),
-      ];
+    _SettingItem(
+      icon: Icons.help_outline_rounded,
+      label: 'Help & FAQ',
+      color: const Color(0xFF00D4AA),
+      onTap: () {},
+    ),
+    _SettingItem(
+      icon: Icons.privacy_tip_outlined,
+      label: 'Privacy policy',
+      color: const Color(0xFF378ADD),
+      onTap: () {},
+    ),
+    _SettingItem(
+      icon: Icons.description_outlined,
+      label: 'Terms of service',
+      color: const Color(0xFF7F77DD),
+      onTap: () {},
+    ),
+    _SettingItem(
+      icon: Icons.logout_rounded,
+      label: 'Sign out',
+      color: const Color(0xFFFF6B8A),
+      onTap: _signOut,
+    ),
+  ];
 
-  // ─── Toggle widget ────────────────────────────────────────────────────────────
   Widget _buildToggle(bool value, ValueChanged<bool> onChanged) {
     return GestureDetector(
       onTap: () => onChanged(!value),
@@ -759,8 +1012,7 @@ class _ProfilePageState extends State<ProfilePage>
         ),
         child: AnimatedAlign(
           duration: const Duration(milliseconds: 200),
-          alignment:
-              value ? Alignment.centerRight : Alignment.centerLeft,
+          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
           child: Container(
             margin: const EdgeInsets.all(3),
             width: 20,
@@ -775,12 +1027,14 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Danger zone ──────────────────────────────────────────────────────────────
   Widget _buildDangerZone() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
       child: GestureDetector(
-        onTap: _showDeleteAccountDialog,
+        onTap: () => showDialog(
+          context: context,
+          builder: (ctx) => _buildDeleteDialog(ctx),
+        ),
         child: Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
@@ -788,7 +1042,6 @@ class _ProfilePageState extends State<ProfilePage>
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: const Color(0xFFFF6B8A).withValues(alpha: 0.20),
-              width: 1,
             ),
           ),
           child: Row(
@@ -842,7 +1095,6 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Sign out dialog ──────────────────────────────────────────────────────────
   Widget _buildSignOutDialog(BuildContext ctx) {
     return Dialog(
       backgroundColor: const Color(0xFF141828),
@@ -921,14 +1173,6 @@ class _ProfilePageState extends State<ProfilePage>
                       decoration: BoxDecoration(
                         color: const Color(0xFFFF6B8A),
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                const Color(0xFFFF6B8A).withValues(alpha: 0.30),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
                       ),
                       child: const Center(
                         child: Text(
@@ -951,7 +1195,6 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Delete account dialog ────────────────────────────────────────────────────
   Widget _buildDeleteDialog(BuildContext ctx) {
     return Dialog(
       backgroundColor: const Color(0xFF141828),
@@ -985,7 +1228,7 @@ class _ProfilePageState extends State<ProfilePage>
             ),
             const SizedBox(height: 8),
             Text(
-              'This action is permanent and cannot be undone. All your data will be removed.',
+              'This is permanent and cannot be undone. All your data will be removed.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.45),
@@ -1024,15 +1267,7 @@ class _ProfilePageState extends State<ProfilePage>
                 const SizedBox(width: 12),
                 Expanded(
                   child: GestureDetector(
-                    onTap: () async {
-                      Navigator.pop(ctx);
-                      // TODO: Delete account from Firebase Auth + Firestore
-                      // await FirebaseAuth.instance.currentUser?.delete();
-                      // await FirebaseFirestore.instance
-                      //     .collection('users')
-                      //     .doc(uid)
-                      //     .delete();
-                    },
+                    onTap: _deleteAccount,
                     child: Container(
                       height: 48,
                       decoration: BoxDecoration(
@@ -1060,7 +1295,6 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ─── Bottom navigation bar ────────────────────────────────────────────────────
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
@@ -1079,11 +1313,32 @@ class _ProfilePageState extends State<ProfilePage>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _navItem(icon: Icons.home_rounded, label: 'Home', onTap: () => Navigator.pop(context)),
-              _navItem(icon: Icons.search_rounded, label: 'Doctors', onTap: () {}),
-              _navItem(icon: Icons.psychology_outlined, label: 'Symptom', onTap: () {}),
-              _navItem(icon: Icons.folder_open_rounded, label: 'Records', onTap: () {}),
-              _navItem(icon: Icons.person_rounded, label: 'Profile', active: true, onTap: () {}),
+              _navItem(
+                icon: Icons.home_rounded,
+                label: 'Home',
+                onTap: () => Navigator.pop(context),
+              ),
+              _navItem(
+                icon: Icons.search_rounded,
+                label: 'Doctors',
+                onTap: () {},
+              ),
+              _navItem(
+                icon: Icons.psychology_outlined,
+                label: 'Symptom',
+                onTap: () {},
+              ),
+              _navItem(
+                icon: Icons.folder_open_rounded,
+                label: 'Records',
+                onTap: () {},
+              ),
+              _navItem(
+                icon: Icons.person_rounded,
+                label: 'Profile',
+                active: true,
+                onTap: () {},
+              ),
             ],
           ),
         ),
@@ -1177,18 +1432,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     setState(() => _saving = true);
     try {
-      final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid != null) {
-        await FirebaseFirestore.instance.collection('users').doc(uid).update({
-          'name': name,
-          'phone': phone,
-        });
-        await FirebaseAuth.instance.currentUser?.updateDisplayName(name);
-      }
-      widget.onSaved(name, phone);
+      widget.onSaved(name, phone); // calls UserProvider.updateProfile()
       if (mounted) Navigator.pop(context);
-    } catch (_) {
-      // TODO: show error snackbar
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1211,7 +1456,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Handle
           Center(
             child: Container(
               width: 40,
@@ -1232,16 +1476,12 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
           ),
           const SizedBox(height: 24),
-
-          // Name field
           _buildField(
             controller: _nameCtrl,
             label: 'Full name',
             icon: Icons.person_outline_rounded,
           ),
           const SizedBox(height: 14),
-
-          // Phone field
           _buildField(
             controller: _phoneCtrl,
             label: 'Phone number',
@@ -1249,8 +1489,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             keyboardType: TextInputType.phone,
           ),
           const SizedBox(height: 28),
-
-          // Save button
           SizedBox(
             width: double.infinity,
             height: 52,
@@ -1283,7 +1521,9 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF00D4AA).withValues(alpha: 0.30),
+                          color: const Color(
+                            0xFF00D4AA,
+                          ).withValues(alpha: 0.30),
                           blurRadius: 14,
                           offset: const Offset(0, 5),
                         ),
@@ -1333,17 +1573,20 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         prefixIcon: Icon(icon, color: const Color(0xFF00D4AA), size: 20),
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.06),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 18,
+        ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-              BorderSide(color: Colors.white.withValues(alpha: 0.10), width: 1.2),
+          borderSide: BorderSide(
+            color: Colors.white.withValues(alpha: 0.10),
+            width: 1.2,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-              const BorderSide(color: Color(0xFF00D4AA), width: 1.6),
+          borderSide: const BorderSide(color: Color(0xFF00D4AA), width: 1.6),
         ),
       ),
     );

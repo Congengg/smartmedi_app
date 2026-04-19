@@ -8,7 +8,7 @@ class ResendTimer extends StatefulWidget {
   const ResendTimer({
     super.key,
     required this.onResend,
-    this.cooldownSeconds = 60,
+    this.cooldownSeconds = 600, // Default to 10 minutes
   });
 
   @override

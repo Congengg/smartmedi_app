@@ -3,13 +3,16 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'package:smartmedi_app/screens/home.dart';
 import '../../widgets/common/blob_painter.dart';
 import '../../widgets/common/gradient_button.dart';
 import '../../widgets/common/app_input_field.dart';
 import '../../widgets/common/top_bar.dart';
 import '../../services/google_auth_service.dart';
+import '../../providers/user_provider.dart';
 import 'login.dart';
+
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -40,14 +43,28 @@ class _RegisterPageState extends State<RegisterPage>
   String? _confirmPassError;
   String? _termsError;
 
-  // Role is always 'patient' in the mobile app.
-  // Doctors register via the web portal only.
   static const String _role = 'patient';
 
   late AnimationController _blobCtrl;
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
+
+  // ─── Firebase error code → friendly message MAP ───────────────────────────
+  static const Map<String, String> _firebaseErrors = {
+    'email-already-in-use': 'An account with this email already exists.',
+    'weak-password': 'Password is too weak. Use at least 6 characters.',
+    'invalid-email': 'The email address format is not valid.',
+    'operation-not-allowed': 'Email/password sign-up is not enabled.',
+    'network-request-failed': 'No internet connection. Check your network.',
+  };
+
+  // ─── Which Firebase codes map to which field ──────────────────────────────
+  static const Map<String, String> _errorFieldMap = {
+    'email-already-in-use': 'email',
+    'invalid-email': 'email',
+    'weak-password': 'password',
+  };
 
   @override
   void initState() {
@@ -86,7 +103,59 @@ class _RegisterPageState extends State<RegisterPage>
     super.dispose();
   }
 
-  // ─── Validation ─────────────────────────────────────────────────────────────
+  // ─── Handle a Firebase error code ────────────────────────────────────────
+  // Looks up the Map → decides where to show it (field or snackbar)
+  void _handleFirebaseError(String code) {
+    final message =
+        _firebaseErrors[code] ?? 'Registration failed. Please try again.';
+    final field = _errorFieldMap[code];
+
+    setState(() {
+      if (field == 'email') {
+        _emailError = message; // red border under email field
+      } else if (field == 'password') {
+        _passError = message; // red border under password field
+      } else {
+        // Everything else → floating snackbar
+        _showSnackbar(message, isError: true);
+      }
+    });
+  }
+
+  // ─── Single snackbar helper ───────────────────────────────────────────────
+  void _showSnackbar(String message, {required bool isError}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: isError
+            ? const Color(0xFFFF6B8A)
+            : const Color(0xFF00D4AA),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  // ─── Validation ───────────────────────────────────────────────────────────
   void _validate() {
     setState(() {
       _nameError = _nameCtrl.text.trim().isEmpty
@@ -139,12 +208,13 @@ class _RegisterPageState extends State<RegisterPage>
     }
   }
 
+  // ─── Firebase registration ────────────────────────────────────────────────
   Future<void> _submit() async {
     setState(() => _loading = true);
     try {
       final username = _usernameCtrl.text.trim().toLowerCase();
 
-      // Step 1: Check username is not already taken
+      // Step 1: Check username uniqueness
       final usernameQuery = await FirebaseFirestore.instance
           .collection('users')
           .where('username', isEqualTo: username)
@@ -163,7 +233,7 @@ class _RegisterPageState extends State<RegisterPage>
             password: _passCtrl.text,
           );
 
-      // Step 3: Save user profile to Firestore
+      // Step 3: Save profile to Firestore
       await FirebaseFirestore.instance
           .collection('users')
           .doc(credential.user!.uid)
@@ -172,11 +242,12 @@ class _RegisterPageState extends State<RegisterPage>
             'username': username,
             'email': _emailCtrl.text.trim(),
             'phone': _phoneCtrl.text.trim(),
-            'role': _role, // always 'patient'
+            'role': _role,
+            'photoUrl': '',
             'createdAt': FieldValue.serverTimestamp(),
           });
 
-      // Step 4: Update display name
+      // Step 4: Update Firebase Auth display name
       await credential.user!.updateDisplayName(_nameCtrl.text.trim());
 
       if (mounted) {
@@ -184,62 +255,46 @@ class _RegisterPageState extends State<RegisterPage>
           context,
           MaterialPageRoute(builder: (_) => const LoginPage()),
         );
+        _showSnackbar('Account created! Please sign in.', isError: false);
       }
     } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        String message;
-        switch (e.code) {
-          case 'email-already-in-use':
-            message = 'An account with this email already exists.';
-            break;
-          case 'weak-password':
-            message = 'Password is too weak. Use at least 6 characters.';
-            break;
-          case 'network-request-failed':
-            message = 'No internet connection. Check your network.';
-            break;
-          default:
-            message = 'Registration failed. Please try again.';
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.error_outline_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    message,
-                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFFFF6B8A),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
-      }
+      // ✅ Map-based handler — no switch needed
+      _handleFirebaseError(e.code);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: const Color(0xFFFF6B8A),
-          ),
-        );
-      }
+      _showSnackbar('Something went wrong. Please try again.', isError: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  // ─── Google sign-up ───────────────────────────────────────────────────────
+  Future<void> _googleSignUp() async {
+    setState(() => _googleLoading = true);
+    final result = await GoogleAuthService.signUp();
+    if (!mounted) return;
+    setState(() => _googleLoading = false);
+
+    // ✅ Map of handlers — no switch needed
+    final handlers = <GoogleAuthStatus, void Function()>{
+      GoogleAuthStatus.success: () async {
+        await context.read<UserProvider>().loadUser();
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PatientHomePage()),
+        );
+        _showSnackbar('Welcome, ${result.name ?? ''}!', isError: false);
+      },
+      GoogleAuthStatus.cancelled: () {},
+      GoogleAuthStatus.doctorBlocked: () =>
+          _showSnackbar(result.message!, isError: true),
+      GoogleAuthStatus.error: () => _showSnackbar(
+        result.message ?? 'Something went wrong.',
+        isError: true,
+      ),
+    };
+
+    handlers[result.status]?.call();
   }
 
   @override
@@ -325,7 +380,6 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  // ─── Main form card ─────────────────────────────────────────────────────────
   Widget _buildCard() {
     return Container(
       padding: const EdgeInsets.all(28),
@@ -348,7 +402,6 @@ class _RegisterPageState extends State<RegisterPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Patient badge ────────────────────────────────────────────────
           _buildPatientBadge(),
           const SizedBox(height: 24),
 
@@ -460,7 +513,6 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  // ─── Patient badge (replaces the old role selector) ──────────────────────
   Widget _buildPatientBadge() {
     return Container(
       width: double.infinity,
@@ -511,7 +563,6 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  // ─── Terms & conditions ──────────────────────────────────────────────────
   Widget _buildTermsCheckbox() {
     return GestureDetector(
       onTap: () => setState(() {
@@ -584,7 +635,6 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  // ─── Or divider ──────────────────────────────────────────────────────────
   Widget _buildDivider() {
     return Row(
       children: [
@@ -615,82 +665,6 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  // ─── Google sign-up ───────────────────────────────────────────────────────
-  Future<void> _googleSignUp() async {
-    setState(() => _googleLoading = true);
-    final result = await GoogleAuthService.signUp();
-    if (!mounted) return;
-    setState(() => _googleLoading = false);
-
-    switch (result.status) {
-      case GoogleAuthStatus.success:
-        // TODO: Navigate to PatientHomePage
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const PatientHomePage()),
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.check_circle_outline_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Welcome, ${result.name ?? ''}!',
-                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFF00D4AA),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
-        break;
-      case GoogleAuthStatus.cancelled:
-        break;
-      case GoogleAuthStatus.doctorBlocked:
-      case GoogleAuthStatus.error:
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.error_outline_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    result.message ?? 'Something went wrong.',
-                    style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFFFF6B8A),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
-        break;
-    }
-  }
-
-  // ─── Google button ───────────────────────────────────────────────────────
   Widget _buildGoogleButton() {
     return SizedBox(
       width: double.infinity,
@@ -753,7 +727,6 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  // ─── Doctor note — redirects doctors to web portal ───────────────────────
   Widget _buildDoctorNote() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -804,7 +777,6 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  // ─── Sign in link ────────────────────────────────────────────────────────
   Widget _buildLoginLink() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,

@@ -4,8 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartmedi_app/screens/profile_page.dart';
 import '../../widgets/common/blob_painter.dart';
+import 'appointsment.dart';
 
-// ─── Blob preset for home page ────────────────────────────────────────────────
 class _HomeBlobs {
   static const blobs = [
     BlobConfig(
@@ -41,12 +41,12 @@ class _HomeBlobs {
   ];
 }
 
-// ─── Quick action model ───────────────────────────────────────────────────────
 class _QuickAction {
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback onTap;
+
   const _QuickAction({
     required this.icon,
     required this.label,
@@ -55,12 +55,12 @@ class _QuickAction {
   });
 }
 
-// ─── Health tip model ─────────────────────────────────────────────────────────
 class _HealthTip {
   final String title;
   final String body;
   final IconData icon;
   final Color color;
+
   const _HealthTip({
     required this.title,
     required this.body,
@@ -69,7 +69,22 @@ class _HealthTip {
   });
 }
 
-// ─── Patient Home Page ────────────────────────────────────────────────────────
+class _ActivityItem {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final String time;
+
+  const _ActivityItem({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.time,
+  });
+}
+
 class PatientHomePage extends StatefulWidget {
   const PatientHomePage({super.key});
 
@@ -81,12 +96,12 @@ class _PatientHomePageState extends State<PatientHomePage>
     with SingleTickerProviderStateMixin {
   late AnimationController _blobCtrl;
 
-  // User data from Firestore
   String _name = '';
   String _greeting = '';
   bool _loadingUser = true;
+  int _tipIndex = 0;
+  int _selectedIndex = 0;
 
-  // Static health tips
   final List<_HealthTip> _tips = const [
     _HealthTip(
       title: 'Stay hydrated',
@@ -110,8 +125,6 @@ class _PatientHomePageState extends State<PatientHomePage>
       color: Color(0xFF7F77DD),
     ),
   ];
-
-  int _tipIndex = 0;
 
   @override
   void initState() {
@@ -139,50 +152,141 @@ class _PatientHomePageState extends State<PatientHomePage>
 
   Future<void> _loadUser() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      if (mounted) {
+        setState(() => _loadingUser = false);
+      }
+      return;
+    }
+
     try {
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
           .get();
-      if (mounted) {
-        setState(() {
-          _name = doc.data()?['name'] ?? '';
-          _loadingUser = false;
-        });
-      }
+
+      if (!mounted) return;
+      setState(() {
+        _name = (doc.data()?['name'] ?? '').toString();
+        _loadingUser = false;
+      });
     } catch (_) {
-      if (mounted) setState(() => _loadingUser = false);
+      if (mounted) {
+        setState(() => _loadingUser = false);
+      }
     }
   }
 
-  // ─── Quick actions ──────────────────────────────────────────────────────────
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
   List<_QuickAction> get _quickActions => [
-    _QuickAction(
-      icon: Icons.search_rounded,
-      label: 'Find Doctor',
-      color: const Color(0xFF00D4AA),
-      onTap: () {}, // TODO: navigate to FindDoctorPage
-    ),
-    _QuickAction(
-      icon: Icons.psychology_outlined,
-      label: 'AI Checker',
-      color: const Color(0xFF7F77DD),
-      onTap: () {}, // TODO: navigate to SymptomCheckerPage
-    ),
-    _QuickAction(
-      icon: Icons.calendar_month_rounded,
-      label: 'Book Appt',
-      color: const Color(0xFF378ADD),
-      onTap: () {}, // TODO: navigate to BookAppointmentPage
-    ),
-    _QuickAction(
-      icon: Icons.folder_open_rounded,
-      label: 'Records',
-      color: const Color(0xFFD85A30),
-      onTap: () {}, // TODO: navigate to MedicalRecordsPage
-    ),
-  ];
+        _QuickAction(
+          icon: Icons.search_rounded,
+          label: 'Find Doctor',
+          color: const Color(0xFF00D4AA),
+          onTap: () => _openPlaceholderPage('Find Doctor'),
+        ),
+        _QuickAction(
+          icon: Icons.psychology_outlined,
+          label: 'AI Checker',
+          color: const Color(0xFF7F77DD),
+          onTap: () => _openPlaceholderPage('AI Checker'),
+        ),
+        _QuickAction(
+          icon: Icons.calendar_month_rounded,
+          label: 'Book Appt',
+          color: const Color(0xFF378ADD),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AppointmentsPage()),
+          ),
+        ),
+        _QuickAction(
+          icon: Icons.folder_open_rounded,
+          label: 'Records',
+          color: const Color(0xFFD85A30),
+          onTap: () => _openPlaceholderPage('Medical Records'),
+        ),
+      ];
+
+  void _openPlaceholderPage(String title) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => _PlaceholderPage(title: title)),
+    );
+  }
+
+  String _formatTimestamp(dynamic value) {
+    if (value == null) return '—';
+
+    DateTime? dt;
+    if (value is Timestamp) {
+      dt = value.toDate();
+    } else if (value is DateTime) {
+      dt = value;
+    }
+
+    if (dt == null) return value.toString();
+
+    final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $period';
+  }
+
+  String _formatDateLabel(Timestamp timestamp) {
+    final now = DateTime.now();
+    final date = timestamp.toDate();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(date.year, date.month, date.day);
+    final diff = target.difference(today).inDays;
+
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Tomorrow';
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  String _timeAgo(Timestamp timestamp) {
+    final now = DateTime.now();
+    final date = timestamp.toDate();
+    final diff = now.difference(date);
+
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  IconData _iconFromType(String type) {
+    switch (type.toLowerCase()) {
+      case 'symptom':
+      case 'symptom_check':
+        return Icons.psychology_outlined;
+      case 'appointment':
+        return Icons.check_circle_outline_rounded;
+      case 'record':
+      case 'medical_record':
+        return Icons.folder_open_rounded;
+      default:
+        return Icons.notifications_none_rounded;
+    }
+  }
+
+  Color _colorFromType(String type) {
+    switch (type.toLowerCase()) {
+      case 'symptom':
+      case 'symptom_check':
+        return const Color(0xFF7F77DD);
+      case 'appointment':
+        return const Color(0xFF00D4AA);
+      case 'record':
+      case 'medical_record':
+        return const Color(0xFFD85A30);
+      default:
+        return const Color(0xFF378ADD);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -193,7 +297,6 @@ class _PatientHomePageState extends State<PatientHomePage>
         builder: (context, _) {
           return Stack(
             children: [
-              // ── Animated background ────────────────────────────────────
               CustomPaint(
                 painter: BlobPainter(
                   _blobCtrl.value * 2 * math.pi,
@@ -213,8 +316,6 @@ class _PatientHomePageState extends State<PatientHomePage>
                   ),
                 ),
               ),
-
-              // ── Content ────────────────────────────────────────────────
               SafeArea(
                 child: CustomScrollView(
                   physics: const BouncingScrollPhysics(),
@@ -233,19 +334,15 @@ class _PatientHomePageState extends State<PatientHomePage>
           );
         },
       ),
-
-      // ── Bottom navigation bar ──────────────────────────────────────────
       bottomNavigationBar: _buildBottomNav(),
     );
   }
 
-  // ─── Top bar ───────────────────────────────────────────────────────────────
   Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Row(
         children: [
-          // SmartMedi logo mark
           Container(
             width: 38,
             height: 38,
@@ -281,19 +378,17 @@ class _PatientHomePageState extends State<PatientHomePage>
             ),
           ),
           const Spacer(),
-          // Notification bell
           _iconButton(
             icon: Icons.notifications_none_rounded,
-            onTap: () {}, // TODO: navigate to NotificationsPage
+            onTap: () => _openPlaceholderPage('Notifications'),
             badge: true,
           ),
           const SizedBox(width: 10),
-          // Profile avatar
           GestureDetector(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ProfilePage()),
-            ), // TODO: navigate to ProfilePage
+            ),
             child: CircleAvatar(
               radius: 18,
               backgroundColor: const Color(0xFF00D4AA).withValues(alpha: 0.20),
@@ -352,7 +447,6 @@ class _PatientHomePageState extends State<PatientHomePage>
     );
   }
 
-  // ─── Header / greeting ─────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
@@ -387,7 +481,6 @@ class _PatientHomePageState extends State<PatientHomePage>
                   ),
                 ),
           const SizedBox(height: 12),
-          // Health status pill
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
             decoration: BoxDecoration(
@@ -426,7 +519,6 @@ class _PatientHomePageState extends State<PatientHomePage>
     );
   }
 
-  // ─── Quick actions grid ────────────────────────────────────────────────────
   Widget _buildQuickActions() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
@@ -443,23 +535,24 @@ class _PatientHomePageState extends State<PatientHomePage>
           ),
           const SizedBox(height: 14),
           Row(
-            children: _quickActions
-                .map(
-                  (a) => Expanded(
-                    child: GestureDetector(
-                      onTap: a.onTap,
-                      child: _QuickActionTile(action: a),
-                    ),
+            children: List.generate(_quickActions.length, (index) {
+              final action = _quickActions[index];
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(right: index == _quickActions.length - 1 ? 0 : 10),
+                  child: GestureDetector(
+                    onTap: action.onTap,
+                    child: _QuickActionTile(action: action),
                   ),
-                )
-                .toList(),
+                ),
+              );
+            }),
           ),
         ],
       ),
     );
   }
 
-  // ─── Upcoming appointment card ─────────────────────────────────────────────
   Widget _buildUpcomingAppointment() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
@@ -478,7 +571,10 @@ class _PatientHomePageState extends State<PatientHomePage>
               ),
               const Spacer(),
               GestureDetector(
-                onTap: () {}, // TODO: navigate to AppointmentsPage
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AppointmentsPage()),
+                ),
                 child: const Text(
                   'See all',
                   style: TextStyle(
@@ -491,15 +587,46 @@ class _PatientHomePageState extends State<PatientHomePage>
             ],
           ),
           const SizedBox(height: 14),
-          // TODO: Replace with StreamBuilder from Firestore
-          _buildAppointmentCard(
-            doctorName: 'Dr. Sarah Lim',
-            specialty: 'General Practitioner',
-            date: 'Today',
-            time: '3:00 PM',
-            type: 'In-person',
-            avatarLetter: 'S',
-          ),
+          if (_uid.isEmpty)
+            _buildEmptyCard('Please log in to view your appointments.')
+          else
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('appointments')
+                  .where('patientId', isEqualTo: _uid)
+                  .where('dateTime', isGreaterThanOrEqualTo: Timestamp.now())
+                  .orderBy('dateTime')
+                  .limit(1)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildLoadingCard();
+                }
+
+                if (snapshot.hasError) {
+                  return _buildEmptyCard('Could not load appointments right now.');
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return _buildEmptyCard('No upcoming appointments yet.');
+                }
+
+                final data = snapshot.data!.docs.first.data() as Map<String, dynamic>;
+                final doctorName = (data['doctorName'] ?? 'Doctor').toString();
+                final specialty = (data['specialty'] ?? 'General Practitioner').toString();
+                final type = (data['type'] ?? 'In-person').toString();
+                final dateTime = data['dateTime'] as Timestamp?;
+
+                return _buildAppointmentCard(
+                  doctorName: doctorName,
+                  specialty: specialty,
+                  date: dateTime != null ? _formatDateLabel(dateTime) : '—',
+                  time: dateTime != null ? _formatTimestamp(dateTime) : '—',
+                  type: type,
+                  avatarLetter: doctorName.isNotEmpty ? doctorName[0].toUpperCase() : 'D',
+                );
+              },
+            ),
         ],
       ),
     );
@@ -527,12 +654,9 @@ class _PatientHomePageState extends State<PatientHomePage>
         children: [
           Row(
             children: [
-              // Doctor avatar
               CircleAvatar(
                 radius: 24,
-                backgroundColor: const Color(
-                  0xFF378ADD,
-                ).withValues(alpha: 0.20),
+                backgroundColor: const Color(0xFF378ADD).withValues(alpha: 0.20),
                 child: Text(
                   avatarLetter,
                   style: const TextStyle(
@@ -566,12 +690,8 @@ class _PatientHomePageState extends State<PatientHomePage>
                   ],
                 ),
               ),
-              // Type badge
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFF00D4AA).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
@@ -592,7 +712,6 @@ class _PatientHomePageState extends State<PatientHomePage>
             ],
           ),
           const SizedBox(height: 16),
-          // Divider
           Divider(color: Colors.white.withValues(alpha: 0.08), height: 1),
           const SizedBox(height: 14),
           Row(
@@ -601,14 +720,13 @@ class _PatientHomePageState extends State<PatientHomePage>
               const SizedBox(width: 20),
               _apptDetail(icon: Icons.access_time_rounded, label: time),
               const Spacer(),
-              // Reschedule button
               GestureDetector(
-                onTap: () {}, // TODO: reschedule
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AppointmentsPage()),
+                ),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 7,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.07),
                     borderRadius: BorderRadius.circular(10),
@@ -651,7 +769,6 @@ class _PatientHomePageState extends State<PatientHomePage>
     );
   }
 
-  // ─── Health tip card ───────────────────────────────────────────────────────
   Widget _buildHealthTip() {
     final tip = _tips[_tipIndex];
     return Padding(
@@ -669,8 +786,7 @@ class _PatientHomePageState extends State<PatientHomePage>
           ),
           const SizedBox(height: 14),
           GestureDetector(
-            onTap: () =>
-                setState(() => _tipIndex = (_tipIndex + 1) % _tips.length),
+            onTap: () => setState(() => _tipIndex = (_tipIndex + 1) % _tips.length),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 350),
               child: Container(
@@ -726,7 +842,6 @@ class _PatientHomePageState extends State<PatientHomePage>
               ),
             ),
           ),
-          // Dot indicators
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -751,33 +866,7 @@ class _PatientHomePageState extends State<PatientHomePage>
     );
   }
 
-  // ─── Recent activity ───────────────────────────────────────────────────────
   Widget _buildRecentActivity() {
-    // TODO: Replace with StreamBuilder from Firestore
-    final items = [
-      _ActivityItem(
-        icon: Icons.psychology_outlined,
-        color: const Color(0xFF7F77DD),
-        title: 'Symptom check completed',
-        subtitle: 'Urgency: Low — Suggested: GP',
-        time: '2h ago',
-      ),
-      _ActivityItem(
-        icon: Icons.check_circle_outline_rounded,
-        color: const Color(0xFF00D4AA),
-        title: 'Appointment confirmed',
-        subtitle: 'Dr. Sarah Lim — Today 3:00 PM',
-        time: 'Yesterday',
-      ),
-      _ActivityItem(
-        icon: Icons.folder_open_rounded,
-        color: const Color(0xFFD85A30),
-        title: 'Medical record uploaded',
-        subtitle: 'Blood test results — Jan 2025',
-        time: '3 days ago',
-      ),
-    ];
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
       child: Column(
@@ -795,7 +884,7 @@ class _PatientHomePageState extends State<PatientHomePage>
               ),
               const Spacer(),
               GestureDetector(
-                onTap: () {},
+                onTap: () => _openPlaceholderPage('Recent Activity'),
                 child: const Text(
                   'See all',
                   style: TextStyle(
@@ -808,35 +897,74 @@ class _PatientHomePageState extends State<PatientHomePage>
             ],
           ),
           const SizedBox(height: 14),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.08),
-                width: 1,
-              ),
-            ),
-            child: Column(
-              children: items
-                  .asMap()
-                  .entries
-                  .map(
-                    (e) => Column(
-                      children: [
-                        _buildActivityRow(e.value),
-                        if (e.key < items.length - 1)
-                          Divider(
-                            color: Colors.white.withValues(alpha: 0.06),
-                            height: 1,
-                            indent: 60,
-                          ),
-                      ],
+          if (_uid.isEmpty)
+            _buildEmptyCard('Please log in to view activity.')
+          else
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('activity')
+                  .where('userId', isEqualTo: _uid)
+                  .orderBy('timestamp', descending: true)
+                  .limit(5)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return _buildLoadingList();
+                }
+
+                if (snapshot.hasError) {
+                  return _buildEmptyCard('Could not load recent activity.');
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return _buildEmptyCard('No recent activity available yet.');
+                }
+
+                final items = snapshot.data!.docs.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final type = (data['type'] ?? '').toString();
+                  final timestamp = data['timestamp'] as Timestamp?;
+
+                  return _ActivityItem(
+                    icon: _iconFromType(type),
+                    color: _colorFromType(type),
+                    title: (data['title'] ?? 'Activity').toString(),
+                    subtitle: (data['subtitle'] ?? '').toString(),
+                    time: timestamp != null ? _timeAgo(timestamp) : '—',
+                  );
+                }).toList();
+
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      width: 1,
                     ),
-                  )
-                  .toList(),
+                  ),
+                  child: Column(
+                    children: items
+                        .asMap()
+                        .entries
+                        .map(
+                          (e) => Column(
+                            children: [
+                              _buildActivityRow(e.value),
+                              if (e.key < items.length - 1)
+                                Divider(
+                                  color: Colors.white.withValues(alpha: 0.06),
+                                  height: 1,
+                                  indent: 60,
+                                ),
+                            ],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                );
+              },
             ),
-          ),
         ],
       ),
     );
@@ -892,7 +1020,6 @@ class _PatientHomePageState extends State<PatientHomePage>
     );
   }
 
-  // ─── Bottom navigation bar ─────────────────────────────────────────────────
   Widget _buildBottomNav() {
     return Container(
       decoration: BoxDecoration(
@@ -914,28 +1041,47 @@ class _PatientHomePageState extends State<PatientHomePage>
               _navItem(
                 icon: Icons.home_rounded,
                 label: 'Home',
-                active: true,
-                onTap: () {},
+                active: _selectedIndex == 0,
+                onTap: () => setState(() => _selectedIndex = 0),
               ),
               _navItem(
                 icon: Icons.search_rounded,
                 label: 'Doctors',
-                onTap: () {}, // TODO: navigate to FindDoctorPage
+                active: _selectedIndex == 1,
+                onTap: () {
+                  setState(() => _selectedIndex = 1);
+                  _openPlaceholderPage('Find Doctor');
+                },
               ),
               _navItem(
                 icon: Icons.psychology_outlined,
                 label: 'Symptom',
-                onTap: () {}, // TODO: navigate to SymptomCheckerPage
+                active: _selectedIndex == 2,
+                onTap: () {
+                  setState(() => _selectedIndex = 2);
+                  _openPlaceholderPage('AI Checker');
+                },
               ),
               _navItem(
                 icon: Icons.folder_open_rounded,
                 label: 'Records',
-                onTap: () {}, // TODO: navigate to MedicalRecordsPage
+                active: _selectedIndex == 3,
+                onTap: () {
+                  setState(() => _selectedIndex = 3);
+                  _openPlaceholderPage('Medical Records');
+                },
               ),
               _navItem(
                 icon: Icons.person_outline_rounded,
                 label: 'Profile',
-                onTap: () {}, // TODO: navigate to ProfilePage
+                active: _selectedIndex == 4,
+                onTap: () {
+                  setState(() => _selectedIndex = 4);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ProfilePage()),
+                  );
+                },
               ),
             ],
           ),
@@ -987,17 +1133,113 @@ class _PatientHomePageState extends State<PatientHomePage>
       ),
     );
   }
+
+  Widget _buildEmptyCard(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.60),
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        children: List.generate(
+          3,
+          (_) => Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            height: 14,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingList() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        children: List.generate(
+          3,
+          (_) => Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 10,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-// ─── Quick action tile widget ─────────────────────────────────────────────────
 class _QuickActionTile extends StatelessWidget {
   final _QuickAction action;
+
   const _QuickActionTile({required this.action});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(right: 10),
       padding: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
         color: action.color.withValues(alpha: 0.10),
@@ -1027,18 +1269,33 @@ class _QuickActionTile extends StatelessWidget {
   }
 }
 
-// ─── Activity item model ──────────────────────────────────────────────────────
-class _ActivityItem {
-  final IconData icon;
-  final Color color;
+class _PlaceholderPage extends StatelessWidget {
   final String title;
-  final String subtitle;
-  final String time;
-  const _ActivityItem({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.subtitle,
-    required this.time,
-  });
+
+  const _PlaceholderPage({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A0E1A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0A0E1A),
+        elevation: 0,
+        title: Text(title),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '$title page is ready for you to connect next.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -430,12 +430,12 @@ class _ProfilePageState extends State<ProfilePage>
                         items: _preferenceItems,
                       ),
                     ),
-                    SliverToBoxAdapter(
-                      child: _buildSection(
-                        title: 'Support',
-                        items: _supportItems,
-                      ),
-                    ),
+                    // SliverToBoxAdapter(
+                    //   child: _buildSection(
+                    //     title: 'Support',
+                    //     items: _supportItems,
+                    //   ),
+                    // ),
                     SliverToBoxAdapter(child: _buildDangerZone()),
                     const SliverToBoxAdapter(child: SizedBox(height: 100)),
                   ],
@@ -970,32 +970,32 @@ class _ProfilePageState extends State<ProfilePage>
     ),
   ];
 
-  List<_SettingItem> get _supportItems => [
-    _SettingItem(
-      icon: Icons.help_outline_rounded,
-      label: 'Help & FAQ',
-      color: const Color(0xFF00D4AA),
-      onTap: () {},
-    ),
-    _SettingItem(
-      icon: Icons.privacy_tip_outlined,
-      label: 'Privacy policy',
-      color: const Color(0xFF378ADD),
-      onTap: () {},
-    ),
-    _SettingItem(
-      icon: Icons.description_outlined,
-      label: 'Terms of service',
-      color: const Color(0xFF7F77DD),
-      onTap: () {},
-    ),
-    _SettingItem(
-      icon: Icons.logout_rounded,
-      label: 'Sign out',
-      color: const Color(0xFFFF6B8A),
-      onTap: _signOut,
-    ),
-  ];
+  // List<_SettingItem> get _supportItems => [
+  //   _SettingItem(
+  //     icon: Icons.help_outline_rounded,
+  //     label: 'Help & FAQ',
+  //     color: const Color(0xFF00D4AA),
+  //     onTap: () {},
+  //   ),
+  //   _SettingItem(
+  //     icon: Icons.privacy_tip_outlined,
+  //     label: 'Privacy policy',
+  //     color: const Color(0xFF378ADD),
+  //     onTap: () {},
+  //   ),
+  //   _SettingItem(
+  //     icon: Icons.description_outlined,
+  //     label: 'Terms of service',
+  //     color: const Color(0xFF7F77DD),
+  //     onTap: () {},
+  //   ),
+  //   _SettingItem(
+  //     icon: Icons.logout_rounded,
+  //     label: 'Sign out',
+  //     color: const Color(0xFFFF6B8A),
+  //     onTap: _signOut,
+  //   ),
+  // ];
 
   Widget _buildToggle(bool value, ValueChanged<bool> onChanged) {
     return GestureDetector(

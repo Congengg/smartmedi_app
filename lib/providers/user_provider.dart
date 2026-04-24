@@ -81,13 +81,24 @@ class UserProvider extends ChangeNotifier {
     }
   }
 
+  // ─── Clear local user state ───────────────────────────────────────────────
+ void clear() {
+  name = '';
+  username = '';
+  email = '';
+  phone = '';
+  photoUrl = '';
+  role = '';
+  isLoading = true;   // ← was false, must be true so skeleton shows on next login
+  error = null;
+  notifyListeners();  // ← was missing, UI needs to reset immediately
+}
+
   // ─── Clear on sign-out ────────────────────────────────────────────────────
-  void clear() {
-    name = username = email = phone = photoUrl = role = '';
-    isLoading = true;
-    error = null;
-    // ✅ No notifyListeners() here either — clear() is called from
-    //    addPostFrameCallback in AuthGate so it's already safe,
-    //    but omitting it avoids any risk of a duplicate build.
+  // ─── Sign out ─────────────────────────────────────────────────────────────
+  Future<void> signOut() async {
+    await FirebaseAuth.instance.signOut();
+    clear();
+    notifyListeners(); // ✅ Safe to call here — triggered by user action, not build
   }
 }

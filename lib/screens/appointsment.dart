@@ -2,36 +2,52 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../widgets/common/blob_painter.dart';
+import 'package:smartmedi_app/screens/book_appointment.dart';
+import 'package:smartmedi_app/screens/reschedule_appointment.dart';
+import 'package:smartmedi_app/widgets/common/blob_painter.dart';
 
 // ─── Blob preset ──────────────────────────────────────────────────────────────
 class _ApptBlobs {
   static const blobs = [
     BlobConfig(
       color: Color(0x1600D4AA),
-      x: 0.85, y: 0.06, radius: 0.40,
-      dx: 0.05, dy: 0.04, speedX: 0.8, speedY: 0.7,
+      x: 0.85,
+      y: 0.06,
+      radius: 0.40,
+      dx: 0.05,
+      dy: 0.04,
+      speedX: 0.8,
+      speedY: 0.7,
     ),
     BlobConfig(
       color: Color(0x125B6EF5),
-      x: 0.08, y: 0.45, radius: 0.36,
-      dx: 0.05, dy: 0.05, speedX: 0.9, speedY: 1.0,
+      x: 0.08,
+      y: 0.45,
+      radius: 0.36,
+      dx: 0.05,
+      dy: 0.05,
+      speedX: 0.9,
+      speedY: 1.0,
     ),
     BlobConfig(
       color: Color(0x0DE040A0),
-      x: 0.50, y: 0.82, radius: 0.30,
-      dx: 0.04, dy: 0.04, speedX: 1.1, speedY: 0.8,
+      x: 0.50,
+      y: 0.82,
+      radius: 0.30,
+      dx: 0.04,
+      dy: 0.04,
+      speedX: 1.1,
+      speedY: 0.8,
     ),
   ];
 }
 
-// ─── Appointment status config ────────────────────────────────────────────────
+// ─── Status config map ────────────────────────────────────────────────────────
 class _StatusConfig {
   final Color color;
   final Color bgColor;
   final IconData icon;
   final String label;
-
   const _StatusConfig({
     required this.color,
     required this.bgColor,
@@ -67,12 +83,19 @@ const Map<String, _StatusConfig> _statusConfigs = {
   ),
 };
 
-// ─── Tab options ──────────────────────────────────────────────────────────────
 enum _ApptTab { upcoming, completed, cancelled }
 
 // ─── Appointments Page ────────────────────────────────────────────────────────
 class AppointmentsPage extends StatefulWidget {
-  const AppointmentsPage({super.key});
+  // ✅ Optional params — used when navigating from FindDoctorPage
+  final String preselectedDoctor;
+  final String preselectedSpecialty;
+
+  const AppointmentsPage({
+    super.key,
+    this.preselectedDoctor = '',
+    this.preselectedSpecialty = '',
+  });
 
   @override
   State<AppointmentsPage> createState() => _AppointmentsPageState();
@@ -98,7 +121,7 @@ class _AppointmentsPageState extends State<AppointmentsPage>
     super.dispose();
   }
 
-  // ─── Map tab to Firestore status values ────────────────────────────────────
+  // ─── Status filter per tab ────────────────────────────────────────────────
   List<String> get _statusFilter {
     switch (_activeTab) {
       case _ApptTab.upcoming:
@@ -108,68 +131,83 @@ class _AppointmentsPageState extends State<AppointmentsPage>
       case _ApptTab.cancelled:
         return ['cancelled'];
     }
+    
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
-      body: AnimatedBuilder(
-        animation: _blobCtrl,
-        builder: (context, _) {
-          return Stack(
-            children: [
-              CustomPaint(
-                painter: BlobPainter(
-                  _blobCtrl.value * 2 * math.pi,
-                  blobs: _ApptBlobs.blobs,
-                ),
-                size: MediaQuery.of(context).size,
+  
+
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: const Color(0xFF0A0E1A),
+    body: Stack(
+      children: [
+        // ✅ AnimatedBuilder ONLY wraps the blob painter
+        AnimatedBuilder(
+          animation: _blobCtrl,
+          builder: (context, _) {
+            return CustomPaint(
+              painter: BlobPainter(
+                _blobCtrl.value * 2 * math.pi,
+                blobs: _ApptBlobs.blobs,
               ),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      const Color(0xFF0A0E1A).withValues(alpha: 0.50),
-                      const Color(0xFF0A0E1A).withValues(alpha: 0.96),
-                    ],
-                  ),
-                ),
-              ),
-              SafeArea(
-                child: Column(
-                  children: [
-                    _buildTopBar(),
-                    _buildTabBar(),
-                    Expanded(child: _buildAppointmentList()),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-      // ── FAB to book new appointment ───────────────────────────────────────
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // TODO: Navigate to BookAppointmentPage
-        },
-        backgroundColor: const Color(0xFF00D4AA),
-        elevation: 0,
-        icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: const Text(
-          'Book Appointment',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
+              size: MediaQuery.of(context).size,
+            );
+          },
+        ),
+
+        // Gradient overlay (static, no animation needed)
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                const Color(0xFF0A0E1A).withValues(alpha: 0.50),
+                const Color(0xFF0A0E1A).withValues(alpha: 0.96),
+              ],
+            ),
           ),
+        ),
+
+        // ✅ SafeArea is OUTSIDE AnimatedBuilder — never recreated
+        SafeArea(
+          child: Column(
+            children: [
+              _buildTopBar(),
+              _buildTabBar(),
+              Expanded(child: _buildAppointmentList()),
+            ],
+          ),
+        ),
+      ],
+    ),
+    floatingActionButton: FloatingActionButton.extended(
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BookAppointmentPage(
+          preselectedDoctor: widget.preselectedDoctor,
+          preselectedSpecialty: widget.preselectedSpecialty,
         ),
       ),
     );
-  }
+  },
+  backgroundColor: const Color(0xFF00D4AA),
+  elevation: 0,
+  icon: const Icon(Icons.add_rounded, color: Colors.white),
+  label: const Text(
+    'Book Appointment',
+    style: TextStyle(
+      color: Colors.white,
+      fontWeight: FontWeight.w600,
+      fontSize: 14,
+    ),
+  ),
+),
+  );
+}
 
   // ─── Top bar ──────────────────────────────────────────────────────────────
   Widget _buildTopBar() {
@@ -185,11 +223,13 @@ class _AppointmentsPageState extends State<AppointmentsPage>
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(11),
-                border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.10)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
               ),
-              child: const Icon(Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white, size: 16),
+              child: const Icon(
+                Icons.arrow_back_ios_new_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
             ),
           ),
           const Spacer(),
@@ -203,18 +243,19 @@ class _AppointmentsPageState extends State<AppointmentsPage>
             ),
           ),
           const Spacer(),
-          // Calendar filter button
           Container(
             width: 38,
             height: 38,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.07),
               borderRadius: BorderRadius.circular(11),
-              border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.10)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
             ),
-            child: const Icon(Icons.calendar_month_outlined,
-                color: Colors.white, size: 18),
+            child: const Icon(
+              Icons.calendar_month_outlined,
+              color: Colors.white,
+              size: 18,
+            ),
           ),
         ],
       ),
@@ -224,11 +265,10 @@ class _AppointmentsPageState extends State<AppointmentsPage>
   // ─── Tab bar ──────────────────────────────────────────────────────────────
   Widget _buildTabBar() {
     final tabs = [
-      (_ApptTab.upcoming,  'Upcoming'),
+      (_ApptTab.upcoming, 'Upcoming'),
       (_ApptTab.completed, 'Completed'),
       (_ApptTab.cancelled, 'Cancelled'),
     ];
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
       child: Container(
@@ -236,8 +276,7 @@ class _AppointmentsPageState extends State<AppointmentsPage>
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Row(
           children: tabs.map((t) {
@@ -277,25 +316,32 @@ class _AppointmentsPageState extends State<AppointmentsPage>
     );
   }
 
-  // ─── Appointment list from Firestore ──────────────────────────────────────
+  // ─── Appointment list with StreamBuilder ─────────────────────────────────
   Widget _buildAppointmentList() {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      return const Center(
-        child: Text('Not logged in.',
-            style: TextStyle(color: Colors.white54)),
-      );
-    }
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) {
+    return Center(
+      child: Text(
+        'Please log in',
+        style: TextStyle(color: Colors.white.withValues(alpha: 0.50)),
+      ),
+    );
+  }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('appointments')
-          .where('patientId', isEqualTo: uid)
-          .where('status', whereIn: _statusFilter)
-          .orderBy('dateTime', descending: _activeTab != _ApptTab.upcoming)
-          .snapshots(),
-      builder: (context, snapshot) {
-        // ── Loading ────────────────────────────────────────────────────
+  // ✅ Declared here so it re-evaluates _statusFilter on every setState
+  final stream = FirebaseFirestore.instance
+      .collection('appointments')
+      .where('patientId', isEqualTo: uid)
+      .where('status', whereIn: _statusFilter)
+      .snapshots();
+
+  return StreamBuilder<QuerySnapshot>(
+    key: ValueKey(_activeTab),   // ✅ forces new StreamBuilder per tab
+    stream: stream,              // ✅ uses freshly computed stream
+    builder: (context, snapshot) {
+        // debugPrint('STATE: ${snapshot.connectionState}');
+        // debugPrint('ERROR: ${snapshot.error}');
+        // debugPrint('DOCS: ${snapshot.data?.docs.length}');
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(
@@ -305,53 +351,68 @@ class _AppointmentsPageState extends State<AppointmentsPage>
           );
         }
 
-        // ── Error ──────────────────────────────────────────────────────
         if (snapshot.hasError) {
+          // debugPrint('🔴 Firestore error: ${snapshot.error}');
           return _buildEmptyState(
             icon: Icons.error_outline_rounded,
             color: const Color(0xFFFF6B8A),
             title: 'Something went wrong',
-            subtitle: 'Could not load appointments.\nPlease try again.',
+            subtitle: snapshot.error.toString(),
           );
         }
 
-        final docs = snapshot.data?.docs ?? [];
+        // ✅ Fix #2 — client-side sort, no composite index needed
+        final docs = List.from(snapshot.data?.docs ?? []);
+        docs.sort((a, b) {
+          final aTs =
+              (a.data() as Map<String, dynamic>)['dateTime'] as Timestamp?;
+          final bTs =
+              (b.data() as Map<String, dynamic>)['dateTime'] as Timestamp?;
+          if (aTs == null || bTs == null) return 0;
+          return _activeTab == _ApptTab.upcoming
+              ? aTs.compareTo(bTs)
+              : bTs.compareTo(aTs);
+        });
 
-        // ── Empty state ────────────────────────────────────────────────
         if (docs.isEmpty) {
+          final Map<_ApptTab, Map<String, dynamic>> emptyConfig = {
+            _ApptTab.upcoming: {
+              'icon': Icons.calendar_today_rounded,
+              'color': const Color(0xFF00D4AA),
+              'title': 'No upcoming appointments',
+              'subtitle': 'Tap "Book Appointment" below\nto schedule a visit.',
+            },
+            _ApptTab.completed: {
+              'icon': Icons.task_alt_rounded,
+              'color': const Color(0xFF5B6EF5),
+              'title': 'No completed appointments',
+              'subtitle': 'Your completed appointments\nwill appear here.',
+            },
+            _ApptTab.cancelled: {
+              'icon': Icons.cancel_outlined,
+              'color': const Color(0xFFFF6B8A),
+              'title': 'No cancelled appointments',
+              'subtitle': 'Your cancelled appointments\nwill appear here.',
+            },
+          };
+          final cfg = emptyConfig[_activeTab]!;
           return _buildEmptyState(
-            icon: _activeTab == _ApptTab.upcoming
-                ? Icons.calendar_today_rounded
-                : _activeTab == _ApptTab.completed
-                    ? Icons.task_alt_rounded
-                    : Icons.cancel_outlined,
-            color: _activeTab == _ApptTab.cancelled
-                ? const Color(0xFFFF6B8A)
-                : const Color(0xFF00D4AA),
-            title: _activeTab == _ApptTab.upcoming
-                ? 'No upcoming appointments'
-                : _activeTab == _ApptTab.completed
-                    ? 'No completed appointments'
-                    : 'No cancelled appointments',
-            subtitle: _activeTab == _ApptTab.upcoming
-                ? 'Tap "Book Appointment" below\nto schedule your first visit.'
-                : 'Your ${_activeTab.name} appointments\nwill appear here.',
+            icon: cfg['icon'] as IconData,
+            color: cfg['color'] as Color,
+            title: cfg['title'] as String,
+            subtitle: cfg['subtitle'] as String,
           );
         }
 
-        // ── List ───────────────────────────────────────────────────────
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 120),
+          physics: const BouncingScrollPhysics(),
           itemCount: docs.length,
           separatorBuilder: (_, __) => const SizedBox(height: 14),
           itemBuilder: (context, i) {
-            final data = docs[i].data() as Map<String, dynamic>;
             return _AppointmentCard(
               appointmentId: docs[i].id,
-              data: data,
-              onCancelled: () {
-                // Firestore update — optimistic UI via stream
-              },
+              data: docs[i].data() as Map<String, dynamic>,
             );
           },
         );
@@ -359,7 +420,57 @@ class _AppointmentsPageState extends State<AppointmentsPage>
     );
   }
 
-  // ─── Empty state ──────────────────────────────────────────────────────────
+  //   Widget _buildAppointmentList() {
+  //   final uid = FirebaseAuth.instance.currentUser?.uid;
+
+  //   // Print UID to console
+  //   debugPrint('🔵 Current UID: $uid');
+
+  //   if (uid == null) {
+  //     return const Center(
+  //       child: Text('Not logged in', style: TextStyle(color: Colors.white)),
+  //     );
+  //   }
+
+  //   return StreamBuilder<QuerySnapshot>(
+  //     stream: FirebaseFirestore.instance
+  //         .collection('appointments')
+  //         .where('patientId', isEqualTo: uid)
+  //         .snapshots(), // ← no orderBy, no status filter
+  //     builder: (context, snapshot) {
+  //       debugPrint('📦 State: ${snapshot.connectionState}');
+  //       debugPrint('❌ Error: ${snapshot.error}');
+  //       debugPrint('📄 Docs: ${snapshot.data?.docs.length}');
+
+  //       if (snapshot.hasError) {
+  //         return Center(
+  //           child: Text(
+  //             'ERROR:\n${snapshot.error}',
+  //             style: const TextStyle(color: Colors.red, fontSize: 12),
+  //             textAlign: TextAlign.center,
+  //           ),
+  //         );
+  //       }
+
+  //       if (snapshot.connectionState == ConnectionState.waiting) {
+  //         return const Center(
+  //           child: Text('Loading...', style: TextStyle(color: Colors.white)),
+  //         );
+  //       }
+
+  //       final docs = snapshot.data?.docs ?? [];
+  //       return Center(
+  //         child: Text(
+  //           'Found ${docs.length} docs\nUID: $uid',
+  //           style: const TextStyle(color: Colors.white),
+  //           textAlign: TextAlign.center,
+  //         ),
+  //       );
+  //     },
+  //   );
+  // }
+
+  // ─── Empty state widget ───────────────────────────────────────────────────
   Widget _buildEmptyState({
     required IconData icon,
     required Color color,
@@ -379,7 +490,9 @@ class _AppointmentsPageState extends State<AppointmentsPage>
                 color: color.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
                 border: Border.all(
-                    color: color.withValues(alpha: 0.28), width: 1.5),
+                  color: color.withValues(alpha: 0.28),
+                  width: 1.5,
+                ),
               ),
               child: Icon(icon, color: color, size: 36),
             ),
@@ -414,50 +527,57 @@ class _AppointmentsPageState extends State<AppointmentsPage>
 class _AppointmentCard extends StatelessWidget {
   final String appointmentId;
   final Map<String, dynamic> data;
-  final VoidCallback onCancelled;
 
-  const _AppointmentCard({
-    required this.appointmentId,
-    required this.data,
-    required this.onCancelled,
-  });
+  const _AppointmentCard({required this.appointmentId, required this.data});
 
-  // ─── Parse Firestore Timestamp → formatted strings ────────────────────────
+  // ─── Format date ──────────────────────────────────────────────────────────
   String _formatDate(dynamic ts) {
     if (ts == null) return '—';
     final dt = (ts as Timestamp).toDate();
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final appt  = DateTime(dt.year, dt.month, dt.day);
-    final diff  = appt.difference(today).inDays;
-
+    final diff = DateTime(
+      dt.year,
+      dt.month,
+      dt.day,
+    ).difference(DateTime(now.year, now.month, now.day)).inDays;
     if (diff == 0) return 'Today';
     if (diff == 1) return 'Tomorrow';
     if (diff == -1) return 'Yesterday';
-
-    const months = ['Jan','Feb','Mar','Apr','May','Jun',
-                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
   }
 
+  // ─── Format time ──────────────────────────────────────────────────────────
   String _formatTime(dynamic ts) {
     if (ts == null) return '—';
     final dt = (ts as Timestamp).toDate();
-    final h   = dt.hour;
-    final m   = dt.minute.toString().padLeft(2, '0');
-    final period = h >= 12 ? 'PM' : 'AM';
-    final hour = h > 12 ? h - 12 : (h == 0 ? 12 : h);
-    return '$hour:$m $period';
+    final h = dt.hour;
+    final m = dt.minute.toString().padLeft(2, '0');
+    final p = h >= 12 ? 'PM' : 'AM';
+    final hr = h > 12 ? h - 12 : (h == 0 ? 12 : h);
+    return '$hr:$m $p';
   }
 
-  // ─── Cancel appointment ───────────────────────────────────────────────────
-  Future<void> _cancel(BuildContext context) async {
+  // ─── Cancel with confirmation dialog ─────────────────────────────────────
+  Future<void> _showCancelDialog(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: const Color(0xFF141828),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: Padding(
           padding: const EdgeInsets.all(28),
           child: Column(
@@ -470,68 +590,84 @@ class _AppointmentCard extends StatelessWidget {
                   color: const Color(0xFFFF6B8A).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.cancel_outlined,
-                    color: Color(0xFFFF6B8A), size: 26),
+                child: const Icon(
+                  Icons.cancel_outlined,
+                  color: Color(0xFFFF6B8A),
+                  size: 26,
+                ),
               ),
               const SizedBox(height: 18),
-              const Text('Cancel appointment?',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700)),
+              const Text(
+                'Cancel appointment?',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 8),
               Text(
                 'This action cannot be undone.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 13.5,
-                    height: 1.5),
+                  color: Colors.white.withValues(alpha: 0.45),
+                  fontSize: 13.5,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 24),
-              Row(children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(ctx, false),
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.07),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12)),
-                      ),
-                      child: const Center(
-                        child: Text('Keep it',
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(ctx, false),
+                      child: Container(
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.07),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.12),
+                          ),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'Keep it',
                             style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500)),
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(ctx, true),
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF6B8A),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Center(
-                        child: Text('Cancel it',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(ctx, true),
+                      child: Container(
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF6B8A),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'Cancel it',
                             style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600)),
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ]),
+                ],
+              ),
             ],
           ),
         ),
@@ -545,7 +681,6 @@ class _AppointmentCard extends StatelessWidget {
           .collection('appointments')
           .doc(appointmentId)
           .update({'status': 'cancelled'});
-      onCancelled();
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -554,7 +689,8 @@ class _AppointmentCard extends StatelessWidget {
             backgroundColor: const Color(0xFFFF6B8A),
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
+              borderRadius: BorderRadius.circular(12),
+            ),
             margin: const EdgeInsets.all(16),
           ),
         );
@@ -564,19 +700,16 @@ class _AppointmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status   = data['status'] as String? ?? 'pending';
-    final config   = _statusConfigs[status] ?? _statusConfigs['pending']!;
-    final doctorName = data['doctorName']   as String? ?? 'Doctor';
-    final specialty  = data['specialty']    as String? ?? '';
-    final type       = data['type']         as String? ?? 'In-person';
-    final notes      = data['notes']        as String? ?? '';
-    final dateTs     = data['dateTime'];
+    final status = data['status'] as String? ?? 'pending';
+    final doctorName = data['doctorName'] as String? ?? 'Doctor';
+    final specialty = data['specialty'] as String? ?? '';
+    final type = data['type'] as String? ?? 'In-person';
+    final notes = data['notes'] as String? ?? '';
+    final dateTs = data['dateTime'];
+    final config = _statusConfigs[status] ?? _statusConfigs['pending']!;
     final isUpcoming = status == 'confirmed' || status == 'pending';
-
-    // Initial letter for avatar
-    final initial = doctorName.isNotEmpty
-        ? doctorName.replaceFirst('Dr. ', '').trim()[0].toUpperCase()
-        : 'D';
+    final initial = doctorName.replaceFirst('Dr. ', '').trim();
+    final avatarLetter = initial.isNotEmpty ? initial[0].toUpperCase() : 'D';
 
     return Container(
       decoration: BoxDecoration(
@@ -589,7 +722,7 @@ class _AppointmentCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // ── Card header ─────────────────────────────────────────────
+          // ── Card header ──────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
@@ -599,10 +732,11 @@ class _AppointmentCard extends StatelessWidget {
                     // Doctor avatar
                     CircleAvatar(
                       radius: 24,
-                      backgroundColor:
-                          const Color(0xFF378ADD).withValues(alpha: 0.18),
+                      backgroundColor: const Color(
+                        0xFF378ADD,
+                      ).withValues(alpha: 0.18),
                       child: Text(
-                        initial,
+                        avatarLetter,
                         style: const TextStyle(
                           color: Color(0xFF378ADD),
                           fontSize: 18,
@@ -639,12 +773,15 @@ class _AppointmentCard extends StatelessWidget {
                     // Status badge
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: config.bgColor,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: config.color.withValues(alpha: 0.35)),
+                          color: config.color.withValues(alpha: 0.35),
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -665,28 +802,21 @@ class _AppointmentCard extends StatelessWidget {
                   ],
                 ),
 
-                // ── Date / time / type row ───────────────────────────
-                const SizedBox(height: 16),
-                Divider(
-                    color: Colors.white.withValues(alpha: 0.07), height: 1),
+                // ── Date / time / type ───────────────────────────────────
                 const SizedBox(height: 14),
+                Divider(color: Colors.white.withValues(alpha: 0.07), height: 1),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    _detail(
-                        icon: Icons.calendar_today_rounded,
-                        label: _formatDate(dateTs)),
+                    _detail(Icons.calendar_today_rounded, _formatDate(dateTs)),
                     const SizedBox(width: 16),
-                    _detail(
-                        icon: Icons.access_time_rounded,
-                        label: _formatTime(dateTs)),
+                    _detail(Icons.access_time_rounded, _formatTime(dateTs)),
                     const SizedBox(width: 16),
-                    _detail(
-                        icon: Icons.location_on_outlined,
-                        label: type),
+                    _detail(Icons.location_on_outlined, type),
                   ],
                 ),
 
-                // ── Doctor notes (if any) ────────────────────────────
+                // ── Notes ────────────────────────────────────────────────
                 if (notes.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -699,9 +829,11 @@ class _AppointmentCard extends StatelessWidget {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.notes_rounded,
-                            color: Colors.white.withValues(alpha: 0.35),
-                            size: 15),
+                        Icon(
+                          Icons.notes_rounded,
+                          color: Colors.white.withValues(alpha: 0.35),
+                          size: 15,
+                        ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -721,19 +853,25 @@ class _AppointmentCard extends StatelessWidget {
             ),
           ),
 
-          // ── Action buttons (only for upcoming) ─────────────────────
+          // ── Action buttons (upcoming only) ───────────────────────────────
           if (isUpcoming) ...[
-            Divider(
-                color: Colors.white.withValues(alpha: 0.07), height: 1),
+            Divider(color: Colors.white.withValues(alpha: 0.07), height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
               child: Row(
                 children: [
-                  // Reschedule
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
-                        // TODO: Navigate to ReschedulePage
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => RescheduleAppointmentPage(
+                              appointmentId: appointmentId,
+                              data: data,
+                            ),
+                          ),
+                        );
                       },
                       child: Container(
                         height: 40,
@@ -741,13 +879,17 @@ class _AppointmentCard extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.12)),
+                            color: Colors.white.withValues(alpha: 0.12),
+                          ),
                         ),
                         child: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.edit_calendar_rounded,
-                                color: Colors.white, size: 15),
+                            Icon(
+                              Icons.edit_calendar_rounded,
+                              color: Colors.white,
+                              size: 15,
+                            ),
                             SizedBox(width: 6),
                             Text(
                               'Reschedule',
@@ -763,24 +905,30 @@ class _AppointmentCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // Cancel
                   Expanded(
                     child: GestureDetector(
-                      onTap: () => _cancel(context),
+                      onTap: () => _showCancelDialog(context),
                       child: Container(
                         height: 40,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFF6B8A).withValues(alpha: 0.10),
+                          color: const Color(
+                            0xFFFF6B8A,
+                          ).withValues(alpha: 0.10),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color: const Color(0xFFFF6B8A)
-                                  .withValues(alpha: 0.30)),
+                            color: const Color(
+                              0xFFFF6B8A,
+                            ).withValues(alpha: 0.30),
+                          ),
                         ),
                         child: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.close_rounded,
-                                color: Color(0xFFFF6B8A), size: 15),
+                            Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFFFF6B8A),
+                              size: 15,
+                            ),
                             SizedBox(width: 6),
                             Text(
                               'Cancel',
@@ -804,7 +952,7 @@ class _AppointmentCard extends StatelessWidget {
     );
   }
 
-  Widget _detail({required IconData icon, required String label}) {
+  Widget _detail(IconData icon, String label) {
     return Row(
       children: [
         Icon(icon, color: const Color(0xFF00D4AA), size: 14),

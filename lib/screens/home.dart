@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:smartmedi_app/screens/find_doctor.dart';
 import 'package:smartmedi_app/screens/profile_page.dart';
 import '../../widgets/common/blob_painter.dart';
 import 'appointsment.dart';
@@ -180,34 +181,39 @@ class _PatientHomePageState extends State<PatientHomePage>
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
   List<_QuickAction> get _quickActions => [
-        _QuickAction(
-          icon: Icons.search_rounded,
-          label: 'Find Doctor',
-          color: const Color(0xFF00D4AA),
-          onTap: () => _openPlaceholderPage('Find Doctor'),
-        ),
-        _QuickAction(
-          icon: Icons.psychology_outlined,
-          label: 'AI Checker',
-          color: const Color(0xFF7F77DD),
-          onTap: () => _openPlaceholderPage('AI Checker'),
-        ),
-        _QuickAction(
-          icon: Icons.calendar_month_rounded,
-          label: 'Book Appt',
-          color: const Color(0xFF378ADD),
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const AppointmentsPage()),
+    _QuickAction(
+      icon: Icons.search_rounded,
+      label: 'Find Doctor',
+      color: const Color(0xFF00D4AA),
+      onTap: () => _openPlaceholderPage('Find Doctor'),
+    ),
+    _QuickAction(
+      icon: Icons.psychology_outlined,
+      label: 'AI Checker',
+      color: const Color(0xFF7F77DD),
+      onTap: () => _openPlaceholderPage('AI Checker'),
+    ),
+    _QuickAction(
+      icon: Icons.calendar_month_rounded,
+      label: 'Book Appt',
+      color: const Color(0xFF378ADD),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const AppointmentsPage(
+            preselectedDoctor: '',
+            preselectedSpecialty: '',
           ),
         ),
-        _QuickAction(
-          icon: Icons.folder_open_rounded,
-          label: 'Records',
-          color: const Color(0xFFD85A30),
-          onTap: () => _openPlaceholderPage('Medical Records'),
-        ),
-      ];
+      ),
+    ),
+    _QuickAction(
+      icon: Icons.folder_open_rounded,
+      label: 'Records',
+      color: const Color(0xFFD85A30),
+      onTap: () => _openPlaceholderPage('Medical Records'),
+    ),
+  ];
 
   void _openPlaceholderPage(String title) {
     Navigator.push(
@@ -539,7 +545,9 @@ class _PatientHomePageState extends State<PatientHomePage>
               final action = _quickActions[index];
               return Expanded(
                 child: Padding(
-                  padding: EdgeInsets.only(right: index == _quickActions.length - 1 ? 0 : 10),
+                  padding: EdgeInsets.only(
+                    right: index == _quickActions.length - 1 ? 0 : 10,
+                  ),
                   child: GestureDetector(
                     onTap: action.onTap,
                     child: _QuickActionTile(action: action),
@@ -573,7 +581,12 @@ class _PatientHomePageState extends State<PatientHomePage>
               GestureDetector(
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AppointmentsPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const AppointmentsPage(
+                      preselectedDoctor: '',
+                      preselectedSpecialty: '',
+                    ),
+                  ),
                 ),
                 child: const Text(
                   'See all',
@@ -604,16 +617,20 @@ class _PatientHomePageState extends State<PatientHomePage>
                 }
 
                 if (snapshot.hasError) {
-                  return _buildEmptyCard('Could not load appointments right now.');
+                  return _buildEmptyCard(
+                    'Could not load appointments right now.',
+                  );
                 }
 
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return _buildEmptyCard('No upcoming appointments yet.');
                 }
 
-                final data = snapshot.data!.docs.first.data() as Map<String, dynamic>;
+                final data =
+                    snapshot.data!.docs.first.data() as Map<String, dynamic>;
                 final doctorName = (data['doctorName'] ?? 'Doctor').toString();
-                final specialty = (data['specialty'] ?? 'General Practitioner').toString();
+                final specialty = (data['specialty'] ?? 'General Practitioner')
+                    .toString();
                 final type = (data['type'] ?? 'In-person').toString();
                 final dateTime = data['dateTime'] as Timestamp?;
 
@@ -623,7 +640,9 @@ class _PatientHomePageState extends State<PatientHomePage>
                   date: dateTime != null ? _formatDateLabel(dateTime) : '—',
                   time: dateTime != null ? _formatTimestamp(dateTime) : '—',
                   type: type,
-                  avatarLetter: doctorName.isNotEmpty ? doctorName[0].toUpperCase() : 'D',
+                  avatarLetter: doctorName.isNotEmpty
+                      ? doctorName[0].toUpperCase()
+                      : 'D',
                 );
               },
             ),
@@ -656,7 +675,9 @@ class _PatientHomePageState extends State<PatientHomePage>
             children: [
               CircleAvatar(
                 radius: 24,
-                backgroundColor: const Color(0xFF378ADD).withValues(alpha: 0.20),
+                backgroundColor: const Color(
+                  0xFF378ADD,
+                ).withValues(alpha: 0.20),
                 child: Text(
                   avatarLetter,
                   style: const TextStyle(
@@ -691,7 +712,10 @@ class _PatientHomePageState extends State<PatientHomePage>
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF00D4AA).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
@@ -723,10 +747,18 @@ class _PatientHomePageState extends State<PatientHomePage>
               GestureDetector(
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AppointmentsPage()),
+                  MaterialPageRoute(
+                    builder: (_) => const AppointmentsPage(
+                      preselectedDoctor: '',
+                      preselectedSpecialty: '',
+                    ),
+                  ),
                 ),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 7,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.07),
                     borderRadius: BorderRadius.circular(10),
@@ -786,7 +818,8 @@ class _PatientHomePageState extends State<PatientHomePage>
           ),
           const SizedBox(height: 14),
           GestureDetector(
-            onTap: () => setState(() => _tipIndex = (_tipIndex + 1) % _tips.length),
+            onTap: () =>
+                setState(() => _tipIndex = (_tipIndex + 1) % _tips.length),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 350),
               child: Container(
@@ -1049,8 +1082,10 @@ class _PatientHomePageState extends State<PatientHomePage>
                 label: 'Doctors',
                 active: _selectedIndex == 1,
                 onTap: () {
-                  setState(() => _selectedIndex = 1);
-                  _openPlaceholderPage('Find Doctor');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const FindDoctorPage()),
+                  );
                 },
               ),
               _navItem(
@@ -1141,9 +1176,7 @@ class _PatientHomePageState extends State<PatientHomePage>
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Text(
         text,
@@ -1289,10 +1322,7 @@ class _PlaceholderPage extends StatelessWidget {
           child: Text(
             '$title page is ready for you to connect next.',
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 16,
-            ),
+            style: const TextStyle(color: Colors.white70, fontSize: 16),
           ),
         ),
       ),

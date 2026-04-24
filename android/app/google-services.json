@@ -12,7 +12,20 @@
           "package_name": "com.example.smartmedi_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "828923117741-l6e4515i2l83oe5f3spgokb0qgrab25b.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.smartmedi_app",
+            "certificate_hash": "bc93af7a10411118685a27a0cc01325dcccc7f3e"
+          }
+        },
+        {
+          "client_id": "828923117741-0qlcv5c5lvcs2e1u5tj8koakcpk6g5kk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAX0MNKBTMChg5B-kZ1PlTMctb0JdcaXi4"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "828923117741-0qlcv5c5lvcs2e1u5tj8koakcpk6g5kk.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "828923117741-ggke6c5cj2njfj699g8ktqnbebu0tkhm.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.smartmediApp"
+              }
+            }
+          ]
         }
       }
     }

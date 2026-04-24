@@ -154,6 +154,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   // ─── Firebase email/password login ────────────────────────────────────────
   Future<void> _submit() async {
+    context.read<UserProvider>().clear();        // ← reset old user data first
+    await context.read<UserProvider>().loadUser();
     setState(() => _loading = true);
     try {
       final input = _loginCtrl.text.trim();
@@ -221,6 +223,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     final result = await GoogleAuthService.signIn();
     if (!mounted) return;
     setState(() => _googleLoading = false);
+    context.read<UserProvider>().clear();        // ← clear first
+    await context.read<UserProvider>().loadUser();
 
     // Map-style handling using a simple lookup instead of switch
     final handlers = <GoogleAuthStatus, void Function()>{

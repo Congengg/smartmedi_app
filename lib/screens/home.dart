@@ -47,7 +47,6 @@ class _QuickAction {
   final String label;
   final Color color;
   final VoidCallback onTap;
-
   const _QuickAction({
     required this.icon,
     required this.label,
@@ -61,7 +60,6 @@ class _HealthTip {
   final String body;
   final IconData icon;
   final Color color;
-
   const _HealthTip({
     required this.title,
     required this.body,
@@ -76,7 +74,6 @@ class _ActivityItem {
   final String title;
   final String subtitle;
   final String time;
-
   const _ActivityItem({
     required this.icon,
     required this.color,
@@ -102,6 +99,10 @@ class _PatientHomePageState extends State<PatientHomePage>
   bool _loadingUser = true;
   int _tipIndex = 0;
   int _selectedIndex = 0;
+
+  // ── FIX: store the resolved Firestore patientId (doc ID in users collection)
+  // This may differ from the Auth UID if docs use auto-generated IDs.
+  String _patientDocId = '';
 
   final List<_HealthTip> _tips = const [
     _HealthTip(
@@ -151,41 +152,67 @@ class _PatientHomePageState extends State<PatientHomePage>
     return 'Good evening';
   }
 
+  // ── FIX 1: Query by uid field, not by doc ID ────────────────────────────
   Future<void> _loadUser() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      if (mounted) {
-        setState(() => _loadingUser = false);
-      }
+    final authUid = FirebaseAuth.instance.currentUser?.uid;
+    if (authUid == null) {
+      if (mounted) setState(() => _loadingUser = false);
       return;
     }
 
     try {
-      final doc = await FirebaseFirestore.instance
+      // ✅ users collection has auto-generated doc IDs with a 'uid' field
+      // So we query WHERE uid == authUid instead of .doc(authUid)
+      final snap = await FirebaseFirestore.instance
           .collection('users')
-          .doc(uid)
+          .where('uid', isEqualTo: authUid)
+          .limit(1)
           .get();
 
       if (!mounted) return;
-      setState(() {
-        _name = (doc.data()?['name'] ?? '').toString();
-        _loadingUser = false;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() => _loadingUser = false);
+
+      if (snap.docs.isNotEmpty) {
+        final data = snap.docs.first.data();
+        setState(() {
+          _name = (data['name'] ?? '').toString();
+          // ── FIX 2: Store the Auth UID as patientId
+          // Appointments store patientId = authUid (from FirebaseAuth)
+          _patientDocId = authUid;
+          _loadingUser = false;
+        });
+      } else {
+        // Fallback: doc ID might equal authUid (older structure)
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(authUid)
+            .get();
+        if (!mounted) return;
+        setState(() {
+          _name = (doc.data()?['name'] ?? '').toString();
+          _patientDocId = authUid;
+          _loadingUser = false;
+        });
       }
+    } catch (e) {
+      debugPrint('_loadUser error: $e');
+      if (mounted) setState(() => _loadingUser = false);
     }
   }
 
-  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+  // ── Use _patientDocId which is always the Auth UID ──────────────────────
+  String get _uid => _patientDocId.isNotEmpty
+      ? _patientDocId
+      : (FirebaseAuth.instance.currentUser?.uid ?? '');
 
   List<_QuickAction> get _quickActions => [
     _QuickAction(
       icon: Icons.search_rounded,
       label: 'Find Doctor',
       color: const Color(0xFF00D4AA),
-      onTap: () => _openPlaceholderPage('Find Doctor'),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const FindDoctorPage()),
+      ),
     ),
     _QuickAction(
       icon: Icons.psychology_outlined,
@@ -224,16 +251,13 @@ class _PatientHomePageState extends State<PatientHomePage>
 
   String _formatTimestamp(dynamic value) {
     if (value == null) return '—';
-
     DateTime? dt;
     if (value is Timestamp) {
       dt = value.toDate();
     } else if (value is DateTime) {
       dt = value;
     }
-
     if (dt == null) return value.toString();
-
     final hour = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
     final minute = dt.minute.toString().padLeft(2, '0');
     final period = dt.hour >= 12 ? 'PM' : 'AM';
@@ -246,7 +270,6 @@ class _PatientHomePageState extends State<PatientHomePage>
     final today = DateTime(now.year, now.month, now.day);
     final target = DateTime(date.year, date.month, date.day);
     final diff = target.difference(today).inDays;
-
     if (diff == 0) return 'Today';
     if (diff == 1) return 'Tomorrow';
     return '${date.day}/${date.month}/${date.year}';
@@ -256,7 +279,6 @@ class _PatientHomePageState extends State<PatientHomePage>
     final now = DateTime.now();
     final date = timestamp.toDate();
     final diff = now.difference(date);
-
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
     if (diff.inHours < 24) return '${diff.inHours}h ago';
@@ -600,37 +622,65 @@ class _PatientHomePageState extends State<PatientHomePage>
             ],
           ),
           const SizedBox(height: 14),
-          if (_uid.isEmpty)
+
+          // ── FIX 3: Guard against empty UID before running the query ────
+          if (_loadingUser)
+            _buildLoadingCard()
+          else if (_uid.isEmpty)
             _buildEmptyCard('Please log in to view your appointments.')
           else
+            // ─── REPLACE the StreamBuilder in _buildUpcomingAppointment ──────────
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('appointments')
                   .where('patientId', isEqualTo: _uid)
-                  .where('dateTime', isGreaterThanOrEqualTo: Timestamp.now())
-                  .orderBy('dateTime')
-                  .limit(1)
+                  .where('status', whereIn: ['pending', 'confirmed'])
                   .snapshots(),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                // If the stream is waiting and we have no data yet
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return _buildLoadingCard();
                 }
 
-                if (snapshot.hasError) {
-                  return _buildEmptyCard(
-                    'Could not load appointments right now.',
-                  );
-                }
+                if (snapshot.hasError)
+                  return _buildEmptyCard('Error loading data.');
 
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty)
                   return _buildEmptyCard('No upcoming appointments yet.');
-                }
 
-                final data =
-                    snapshot.data!.docs.first.data() as Map<String, dynamic>;
+                // 1. Get current time (Start of today) to show all of today's appts
+                final now = DateTime.now();
+                final startOfToday = DateTime(now.year, now.month, now.day);
+
+                // 2. Filter client-side: Show if it's today or in the future
+                final validDocs = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final dt = data['dateTime'] as Timestamp?;
+                  if (dt == null) return false;
+                  return dt.toDate().isAfter(
+                    startOfToday,
+                  ); // Show everything from today onwards
+                }).toList();
+
+                if (validDocs.isEmpty)
+                  return _buildEmptyCard('No upcoming appointments.');
+
+                // 3. Sort: Closest appointment first
+                validDocs.sort((a, b) {
+                  final da =
+                      (a.data() as Map<String, dynamic>)['dateTime']
+                          as Timestamp;
+                  final db =
+                      (b.data() as Map<String, dynamic>)['dateTime']
+                          as Timestamp;
+                  return da.compareTo(db);
+                });
+
+                final data = validDocs.first.data() as Map<String, dynamic>;
                 final doctorName = (data['doctorName'] ?? 'Doctor').toString();
-                final specialty = (data['specialty'] ?? 'General Practitioner')
-                    .toString();
+                final specialty = (data['specialty'] ?? 'General').toString();
                 final type = (data['type'] ?? 'In-person').toString();
                 final dateTime = data['dateTime'] as Timestamp?;
 
@@ -930,34 +980,45 @@ class _PatientHomePageState extends State<PatientHomePage>
             ],
           ),
           const SizedBox(height: 14),
-          if (_uid.isEmpty)
+          if (_loadingUser)
+            _buildLoadingList()
+          else if (_uid.isEmpty)
             _buildEmptyCard('Please log in to view activity.')
           else
+            // ─── REPLACE the StreamBuilder in _buildRecentActivity ──────────
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('activity')
                   .where('userId', isEqualTo: _uid)
-                  .orderBy('timestamp', descending: true)
-                  .limit(5)
-                  .snapshots(),
+                  .snapshots(), // Removed orderBy to prevent index requirement
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return _buildLoadingList();
                 }
 
-                if (snapshot.hasError) {
-                  return _buildEmptyCard('Could not load recent activity.');
-                }
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty)
+                  return _buildEmptyCard('No recent activity available.');
 
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return _buildEmptyCard('No recent activity available yet.');
-                }
+                // Sort client-side instead of server-side to bypass Index requirement
+                final sortedDocs = docs.toList()
+                  ..sort((a, b) {
+                    final ta =
+                        (a.data() as Map<String, dynamic>)['timestamp']
+                            as Timestamp?;
+                    final tb =
+                        (b.data() as Map<String, dynamic>)['timestamp']
+                            as Timestamp?;
+                    return (tb ?? Timestamp.now()).compareTo(
+                      ta ?? Timestamp.now(),
+                    );
+                  });
 
-                final items = snapshot.data!.docs.map((doc) {
+                final items = sortedDocs.take(5).map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final type = (data['type'] ?? '').toString();
                   final timestamp = data['timestamp'] as Timestamp?;
-
                   return _ActivityItem(
                     icon: _iconFromType(type),
                     color: _colorFromType(type),
@@ -973,7 +1034,6 @@ class _PatientHomePageState extends State<PatientHomePage>
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: Colors.white.withValues(alpha: 0.08),
-                      width: 1,
                     ),
                   ),
                   child: Column(
@@ -1082,6 +1142,7 @@ class _PatientHomePageState extends State<PatientHomePage>
                 label: 'Doctors',
                 active: _selectedIndex == 1,
                 onTap: () {
+                  setState(() => _selectedIndex = 1);
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const FindDoctorPage()),
@@ -1267,44 +1328,50 @@ class _PatientHomePageState extends State<PatientHomePage>
 
 class _QuickActionTile extends StatelessWidget {
   final _QuickAction action;
-
   const _QuickActionTile({required this.action});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        color: action.color.withValues(alpha: 0.10),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: action.onTap,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: action.color.withValues(alpha: 0.22),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(action.icon, color: action.color, size: 24),
-          const SizedBox(height: 7),
-          Text(
-            action.label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: action.color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: action.color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: action.color.withValues(alpha: 0.22),
+              width: 1,
             ),
           ),
-        ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(action.icon, color: action.color, size: 24),
+              const SizedBox(height: 7),
+              Text(
+                action.label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: action.color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
+// ── Placeholder Page ──────────────────────────────────────────────────────────
 class _PlaceholderPage extends StatelessWidget {
   final String title;
-
   const _PlaceholderPage({required this.title});
 
   @override

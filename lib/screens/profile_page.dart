@@ -130,9 +130,20 @@ class _ProfilePageState extends State<ProfilePage>
       final downloadUrl = await ref.getDownloadURL();
 
       // Save URL to Firestore and Firebase Auth profile
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
-        'photoUrl': downloadUrl,
-      });
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: uid)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isNotEmpty) {
+        await snap.docs.first.reference.update({'photoUrl': downloadUrl});
+      } else {
+        // Fallback for older structure where doc ID == uid
+        await FirebaseFirestore.instance.collection('users').doc(uid).update({
+          'photoUrl': downloadUrl,
+        });
+      }
 
       await FirebaseAuth.instance.currentUser?.updatePhotoURL(downloadUrl);
 
@@ -213,95 +224,6 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  Future<void> _showSignOutDialog(BuildContext context) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => Dialog(
-      backgroundColor: const Color(0xFF141828),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF6B8A).withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.logout_rounded,
-                  color: Color(0xFFFF6B8A), size: 26),
-            ),
-            const SizedBox(height: 18),
-            const Text('Sign out?',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700)),
-            const SizedBox(height: 8),
-            Text('You will be returned to the login screen.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.45),
-                    fontSize: 13.5,
-                    height: 1.5)),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(ctx, false),
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.07),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.12)),
-                      ),
-                      child: const Center(
-                          child: Text('Cancel',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500))),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(ctx, true),
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF6B8A),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Center(
-                          child: Text('Sign out',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600))),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  if (confirmed == true && context.mounted) {
-    await context.read<UserProvider>().signOut();
-  }
-}
-
   Widget _sourceOption({
     required IconData icon,
     required String label,
@@ -363,7 +285,17 @@ class _ProfilePageState extends State<ProfilePage>
       if (uid == null) return;
 
       // Delete Firestore document
-      await FirebaseFirestore.instance.collection('users').doc(uid).delete();
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: uid)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isNotEmpty) {
+        await snap.docs.first.reference.delete();
+      } else {
+        await FirebaseFirestore.instance.collection('users').doc(uid).delete();
+      }
 
       // Delete profile photo from Storage (if exists)
       try {
@@ -1059,25 +991,8 @@ class _ProfilePageState extends State<ProfilePage>
     ),
   ];
 
+  // ✅ Replace with just Sign out
   List<_SettingItem> get _supportItems => [
-    _SettingItem(
-      icon: Icons.help_outline_rounded,
-      label: 'Help & FAQ',
-      color: const Color(0xFF00D4AA),
-      onTap: () {},
-    ),
-    _SettingItem(
-      icon: Icons.privacy_tip_outlined,
-      label: 'Privacy policy',
-      color: const Color(0xFF378ADD),
-      onTap: () {},
-    ),
-    _SettingItem(
-      icon: Icons.description_outlined,
-      label: 'Terms of service',
-      color: const Color(0xFF7F77DD),
-      onTap: () {},
-    ),
     _SettingItem(
       icon: Icons.logout_rounded,
       label: 'Sign out',

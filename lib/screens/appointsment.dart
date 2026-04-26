@@ -90,11 +90,13 @@ class AppointmentsPage extends StatefulWidget {
   // ✅ Optional params — used when navigating from FindDoctorPage
   final String preselectedDoctor;
   final String preselectedSpecialty;
+  final DateTime? preselectedDateTime;
 
   const AppointmentsPage({
     super.key,
     this.preselectedDoctor = '',
-    this.preselectedSpecialty = '',
+    this.preselectedSpecialty = '', 
+    this.preselectedDateTime, 
   });
 
   @override
@@ -419,56 +421,6 @@ Widget build(BuildContext context) {
       },
     );
   }
-
-  //   Widget _buildAppointmentList() {
-  //   final uid = FirebaseAuth.instance.currentUser?.uid;
-
-  //   // Print UID to console
-  //   debugPrint('🔵 Current UID: $uid');
-
-  //   if (uid == null) {
-  //     return const Center(
-  //       child: Text('Not logged in', style: TextStyle(color: Colors.white)),
-  //     );
-  //   }
-
-  //   return StreamBuilder<QuerySnapshot>(
-  //     stream: FirebaseFirestore.instance
-  //         .collection('appointments')
-  //         .where('patientId', isEqualTo: uid)
-  //         .snapshots(), // ← no orderBy, no status filter
-  //     builder: (context, snapshot) {
-  //       debugPrint('📦 State: ${snapshot.connectionState}');
-  //       debugPrint('❌ Error: ${snapshot.error}');
-  //       debugPrint('📄 Docs: ${snapshot.data?.docs.length}');
-
-  //       if (snapshot.hasError) {
-  //         return Center(
-  //           child: Text(
-  //             'ERROR:\n${snapshot.error}',
-  //             style: const TextStyle(color: Colors.red, fontSize: 12),
-  //             textAlign: TextAlign.center,
-  //           ),
-  //         );
-  //       }
-
-  //       if (snapshot.connectionState == ConnectionState.waiting) {
-  //         return const Center(
-  //           child: Text('Loading...', style: TextStyle(color: Colors.white)),
-  //         );
-  //       }
-
-  //       final docs = snapshot.data?.docs ?? [];
-  //       return Center(
-  //         child: Text(
-  //           'Found ${docs.length} docs\nUID: $uid',
-  //           style: const TextStyle(color: Colors.white),
-  //           textAlign: TextAlign.center,
-  //         ),
-  //       );
-  //     },
-  //   );
-  // }
 
   // ─── Empty state widget ───────────────────────────────────────────────────
   Widget _buildEmptyState({

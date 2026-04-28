@@ -192,7 +192,7 @@ class _SymptomCheckerPageState extends State<SymptomCheckerPage>
     });
 
     try {
-      const apiKey = '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';
+      const apiKey = 'API KEY HERE';
       const model = 'llama-3.3-70b-versatile';
       final url = 'https://api.groq.com/openai/v1/chat/completions';
 

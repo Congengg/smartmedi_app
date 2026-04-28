@@ -94,7 +94,7 @@ class _RescheduleAppointmentPageState
       });
 
       if (context.mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // Go back after successful update
         ScaffoldMessenger.of(context).showSnackBar(_snackBar(
           'Appointment rescheduled! ✓',
           const Color(0xFF00D4AA),

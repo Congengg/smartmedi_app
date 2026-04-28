@@ -41,6 +41,10 @@ dependencies:
   provider: ^6.1.2
   image_picker: ^1.1.2
   firebase_storage: ^12.4.10
+  file_picker: ^11.0.2
+  http: ^1.6.0
+  google_generative_ai: ^0.4.7
+  firebase_messaging: ^15.2.10
 
 dev_dependencies:
   flutter_test:

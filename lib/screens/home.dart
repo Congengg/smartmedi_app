@@ -3,7 +3,10 @@ import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:smartmedi_app/screens/find_doctor.dart';
+import 'package:smartmedi_app/screens/medical_records.dart';
+import 'package:smartmedi_app/screens/notification.dart';
 import 'package:smartmedi_app/screens/profile_page.dart';
+import 'package:smartmedi_app/screens/sympton_checker.dart';
 import '../../widgets/common/blob_painter.dart';
 import 'appointsment.dart';
 
@@ -218,7 +221,10 @@ class _PatientHomePageState extends State<PatientHomePage>
       icon: Icons.psychology_outlined,
       label: 'AI Checker',
       color: const Color(0xFF7F77DD),
-      onTap: () => _openPlaceholderPage('AI Checker'),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SymptomCheckerPage()),
+      ),
     ),
     _QuickAction(
       icon: Icons.calendar_month_rounded,
@@ -408,7 +414,10 @@ class _PatientHomePageState extends State<PatientHomePage>
           const Spacer(),
           _iconButton(
             icon: Icons.notifications_none_rounded,
-            onTap: () => _openPlaceholderPage('Notifications'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationsPage()),
+            ),
             badge: true,
           ),
           const SizedBox(width: 10),
@@ -643,12 +652,14 @@ class _PatientHomePageState extends State<PatientHomePage>
                   return _buildLoadingCard();
                 }
 
-                if (snapshot.hasError)
+                if (snapshot.hasError) {
                   return _buildEmptyCard('Error loading data.');
+                }
 
                 final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty)
+                if (docs.isEmpty) {
                   return _buildEmptyCard('No upcoming appointments yet.');
+                }
 
                 // 1. Get current time (Start of today) to show all of today's appts
                 final now = DateTime.now();
@@ -664,8 +675,9 @@ class _PatientHomePageState extends State<PatientHomePage>
                   ); // Show everything from today onwards
                 }).toList();
 
-                if (validDocs.isEmpty)
+                if (validDocs.isEmpty) {
                   return _buildEmptyCard('No upcoming appointments.');
+                }
 
                 // 3. Sort: Closest appointment first
                 validDocs.sort((a, b) {
@@ -998,8 +1010,9 @@ class _PatientHomePageState extends State<PatientHomePage>
                 }
 
                 final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty)
+                if (docs.isEmpty) {
                   return _buildEmptyCard('No recent activity available.');
+                }
 
                 // Sort client-side instead of server-side to bypass Index requirement
                 final sortedDocs = docs.toList()
@@ -1155,7 +1168,12 @@ class _PatientHomePageState extends State<PatientHomePage>
                 active: _selectedIndex == 2,
                 onTap: () {
                   setState(() => _selectedIndex = 2);
-                  _openPlaceholderPage('AI Checker');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SymptomCheckerPage(),
+                    ),
+                  );
                 },
               ),
               _navItem(
@@ -1164,7 +1182,12 @@ class _PatientHomePageState extends State<PatientHomePage>
                 active: _selectedIndex == 3,
                 onTap: () {
                   setState(() => _selectedIndex = 3);
-                  _openPlaceholderPage('Medical Records');
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MedicalRecordsPage(),
+                    ),
+                  );
                 },
               ),
               _navItem(
